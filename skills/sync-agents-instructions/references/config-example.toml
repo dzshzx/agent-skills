@@ -7,17 +7,35 @@
 project_globs = ["~/workspace/*"]
 # Which per-repo filenames are governed instruction surfaces.
 project_instruction_files = ["AGENTS.md", "CLAUDE.md"]
+# Files this skill must NEVER write or restructure (project workflow owners).
+off_limits = ["**/.trellis/**", "**/docs/agents/**", "**/conventions/**"]
+# Soft budget for the natively-injected surface (entry files + all
+# load="always" sources, as expanded by the most eager agent).
+inject_budget_lines = 300
 
-# Shared instruction sources — the single-source layer project files may
-# reference. `role` documents the split so Compare can route rules; the skill
-# enforces this split, it does not invent one.
+# Shared instruction sources — the vertical slices of the user level.
+# role  = what belongs here (the owner's split; the skill enforces it).
+# domain = slice name; load = "always" (native inject) | "on-demand" (lazy
+# trigger pointer in entry files: "when doing X, read Y").
 [[shared_sources]]
 path = "~/.config/agent-instructions/shared.md"
 role = "volatile machine/infrastructure facts (ports, paths, endpoints)"
+domain = "machine-facts"
+load = "always"
 
 [[shared_sources]]
 path = "~/.config/agent-instructions/shared-behavior.md"
-role = "stable agent-agnostic behavior contract"
+role = "stable agent-agnostic behavior contract (incl. seed sections for future slices, e.g. agent-assets routing)"
+domain = "behavior"
+load = "always"
+
+# Example of an on-demand domain slice (create only when rules reach minimum
+# mass — roughly >=5 rules or one cohesive theme):
+# [[shared_sources]]
+# path = "~/.config/agent-instructions/frontend.md"
+# role = "cross-project frontend standards"
+# domain = "frontend"
+# load = "on-demand"
 
 # One entry per AI agent on this machine. Supporting a new agent is adding an
 # entry here — the skill body never changes.
@@ -26,6 +44,8 @@ name = "claude-code"
 entry_file = "~/.claude/CLAUDE.md"
 skill_dirs = ["~/.claude/skills"]
 runtime_constructs = ["WebFetch", "Edit", "Write"]
+# Claude Code natively expands @-imports: its injected surface = entry + all
+# load="always" sources.
 
 [[agents]]
 name = "codex"
@@ -33,3 +53,5 @@ entry_file = "~/.codex/AGENTS.md"
 agent_specific_file = "~/.codex/INSTRUCTION.md"
 skill_dirs = ["~/.agents/skills", "~/.codex/skills"]
 runtime_constructs = ["apply_patch", "codex apply", "codex/{feature}"]
+# Codex does not expand references natively; the entry file must carry an
+# explicit read-before-task instruction.

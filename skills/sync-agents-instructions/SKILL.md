@@ -1,6 +1,6 @@
 ---
 name: sync-agents-instructions
-description: Governs shared agent instruction rules across a workspace of repos and any set of AI agents (Claude Code, Codex, Cursor, ...) — adds new shared rules, syncs references, and converges duplicate project-local rules into the shared sources, driven by a per-machine config file. Inspect-plan-execute flow with dirty-worktree protection, governed handling of gitignored instruction files, and per-repo target-only commits. Use when asked to sync AGENTS.md/CLAUDE.md rules, add or update shared agent instructions, or deduplicate agent rules across a workspace.
+description: Governs shared agent instruction rules across a workspace of repos and any set of AI agents (Claude Code, Codex, Cursor, ...) — adds new shared rules, syncs references, and converges duplicate project-local rules into the shared sources, driven by a per-machine config file, and routes each rule along two axes — project vs user level, and vertical domain slices (behavior contract, machine facts, code standards, frontend standards, ...) with native-inject vs lazy-load placement. Inspect-plan-execute flow with dirty-worktree protection, governed handling of gitignored instruction files, and per-repo target-only commits. Use when asked to sync AGENTS.md/CLAUDE.md rules, add or update shared agent instructions, or deduplicate agent rules across a workspace.
 ---
 
 # Sync Agents Instructions
@@ -33,16 +33,64 @@ for a complete annotated example:
 - `[workspace]` — `project_globs` (where project repos live) and
   `project_instruction_files` (which per-repo filenames are governed, e.g.
   `AGENTS.md`, `CLAUDE.md`).
-- `[[shared_sources]]` — each shared instruction file with a `role` note
-  (e.g. volatile machine facts vs stable behavior contract). What belongs in
-  which source is the config owner's split; this skill enforces the split it
-  is given, it does not invent one.
+- `[[shared_sources]]` — each shared instruction file with:
+  - `role` — what belongs here (the config owner's split; this skill enforces
+    the split it is given, it does not invent one);
+  - `domain` — the vertical slice it covers (`behavior`, `machine-facts`,
+    `code-standards`, `frontend`, `docs-writing`, ... free-form);
+  - `load` — `"always"` (wired into agent entry files, natively injected
+    where the agent expands references) or `"on-demand"` (entry files carry
+    only a one-line trigger pointer: *when doing X, read Y*).
+- `[workspace].off_limits` — glob patterns for files this skill must never
+  write or restructure (project workflow specs such as `.trellis/**`,
+  `docs/agents/**`, repo `conventions/**`). Rules that belong there are
+  reported, never moved.
 - `[[agents]]` — one entry per AI agent on the machine: `name`, `entry_file`
   (the file that agent loads globally), optional `agent_specific_file`
   (rules only that agent should see), optional `runtime_constructs`
   (identifiers that mark a rule as agent-bound, e.g. tool names such as
   `apply_patch` or `WebFetch`). Adding support for a new agent = adding an
   `[[agents]]` entry, not editing this skill.
+
+## Placement Decision Model（rule routing along two axes）
+
+Route every rule through both axes before writing anything.
+
+**Axis 1 — level (project vs user):**
+
+1. Contains a project-specific atom (repo path, deployment gate, domain
+   boundary, spec pointer) → **project instruction file**.
+2. Is project workflow / executable convention (how to test, branch, release,
+   spec layers) → **project workflow owner** (`off_limits` territory, e.g.
+   `.trellis/spec/`, `docs/agents/`). Report it; never absorb it. This skill
+   governs instruction surfaces, not project workflows.
+3. Holds across ≥2 projects with no project atoms → **user level**. Apply the
+   *rule of two*: promote when a rule shows up in a second project, not on
+   first sight.
+4. Unsure → leave at project level and flag as a promotion candidate. A wrong
+   global rule pollutes every project; a not-yet-promoted local rule costs one
+   duplicate.
+
+**Axis 2 — vertical slice (within user level), by change-driver × task scope:**
+
+| Rule applies to | Slice | Load |
+| --- | --- | --- |
+| every task, any domain | behavior contract | `always` (native inject — keep this file small) |
+| every task, changes when the machine changes | machine facts | `always` |
+| only tasks in one technical domain (frontend, code style, docs writing, ...) | that domain's slice file | `on-demand` (entry carries a one-line trigger pointer) |
+| only one agent | that agent's `agent_specific_file` | per agent |
+
+**Anti-fragmentation:** a new slice file needs minimum mass — roughly ≥5
+rules or one cohesive theme. Below that, the rule goes into a named section
+of the nearest existing file; the section is the future slice's seed and can
+be promoted later (e.g. a skills/agent-assets routing section stays inside
+the behavior contract until it outgrows it).
+
+**Injection budget:** the natively-injected surface (entry files plus all
+`load = "always"` sources, as expanded by the most eager agent) should stay
+within the budget set in config (`[workspace].inject_budget_lines`, default
+300). When over budget, demote domain sections to `on-demand` slices before
+trimming content.
 
 ## Workflow
 
@@ -142,6 +190,10 @@ Treat it as a distinct governance class:
 - Do not stash, reset, checkout, or clean unrelated dirty paths.
 - Do not hardcode discovered machine topology back into this SKILL.md — it
   belongs in the config file.
+- Do not write into `off_limits` paths (project workflow specs); rules that
+  belong there are reported to the user, not moved or rewritten.
+- Do not create a new slice file below minimum mass, and do not slice finer
+  than task-scope domains (no per-language micro-files on day one).
 
 ## Validation
 
