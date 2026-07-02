@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sync AGENTS Instructions"
+  short_description: "Govern shared agent rules — sync refs and converge duplicates"
+  default_prompt: "治理 workspace 共享 agent 指令：同步引用、收敛重复规则"
