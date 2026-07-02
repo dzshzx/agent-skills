@@ -1,0 +1,35 @@
+# sync-agents-instructions machine topology config.
+# Default location: ~/.config/agent-instructions/sync-config.toml
+# Every path may use ~ for the user home.
+
+[workspace]
+# Where project repos live (globs, evaluated non-recursively per entry).
+project_globs = ["~/workspace/*"]
+# Which per-repo filenames are governed instruction surfaces.
+project_instruction_files = ["AGENTS.md", "CLAUDE.md"]
+
+# Shared instruction sources — the single-source layer project files may
+# reference. `role` documents the split so Compare can route rules; the skill
+# enforces this split, it does not invent one.
+[[shared_sources]]
+path = "~/.config/agent-instructions/shared.md"
+role = "volatile machine/infrastructure facts (ports, paths, endpoints)"
+
+[[shared_sources]]
+path = "~/.config/agent-instructions/shared-behavior.md"
+role = "stable agent-agnostic behavior contract"
+
+# One entry per AI agent on this machine. Supporting a new agent is adding an
+# entry here — the skill body never changes.
+[[agents]]
+name = "claude-code"
+entry_file = "~/.claude/CLAUDE.md"
+skill_dirs = ["~/.claude/skills"]
+runtime_constructs = ["WebFetch", "Edit", "Write"]
+
+[[agents]]
+name = "codex"
+entry_file = "~/.codex/AGENTS.md"
+agent_specific_file = "~/.codex/INSTRUCTION.md"
+skill_dirs = ["~/.agents/skills", "~/.codex/skills"]
+runtime_constructs = ["apply_patch", "codex apply", "codex/{feature}"]
