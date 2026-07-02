@@ -71,6 +71,13 @@ Route every rule through both axes before writing anything.
    global rule pollutes every project; a not-yet-promoted local rule costs one
    duplicate.
 
+**Reference-direction invariant (both axes):** a project instruction file may
+only `@`-reference files inside its own repo. User-level shared sources are
+wired exclusively through each agent's user-level `entry_file`; a
+project-level `@` pointing into the user directory is a duplicate injection
+channel — remove the reference (do **not** copy the user-level file into the
+repo: that mints a second source of truth).
+
 **Axis 2 — vertical slice (within user level), by change-driver × task scope:**
 
 | Rule applies to | Slice | Load |
