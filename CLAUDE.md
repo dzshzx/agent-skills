@@ -8,16 +8,6 @@ A collection of reusable agent skills following the [Agent Skills](https://agent
 
 Skills here are **prompt-instructions-as-product**: the SKILL.md body is the deliverable, and edits to it are behavior changes for every agent that installs it.
 
-## Commands
-
-Only `trellis-mode-switcher` has executable code. Its tests are plain `unittest`, run directly:
-
-```bash
-python3 skills/trellis-mode-switcher/tests/test_inspect_trellis_mode.py
-```
-
-Run them only when `scripts/` or `tests/` of that skill changed — SKILL.md/reference edits don't need them. The tests invoke the inspector as a subprocess against temp repos, so no fixtures or dependencies are needed (stdlib only).
-
 ## Design rules (enforced, from README)
 
 - **No machine-specific facts in SKILL.md.** Paths, hostnames, and machine topology live in per-machine config files (see `skills/sync-agents-instructions/references/config-example.toml`) or are resolved relative to the skill directory (`${CLAUDE_SKILL_DIR}` on Claude Code; "the folder containing this SKILL.md" elsewhere).

@@ -17,7 +17,6 @@ skill is a directory under `skills/` with a `SKILL.md` plus optional
 | Skill | What it does |
 | --- | --- |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs shared agent instruction rules across a workspace: converges duplicated rules from per-repo `AGENTS.md`/`CLAUDE.md` into shared instruction sources and keeps references wired, for any set of agents. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic. |
-| [`trellis-mode-switcher`](skills/trellis-mode-switcher/SKILL.md) | Switches a [Trellis](https://github.com/mindfoldhq/trellis)-managed repo between Codex inline / sub-agent dispatch and channel orchestration: inspect → edit one axis → minimal validation → compact report. |
 
 ## Design rules
 

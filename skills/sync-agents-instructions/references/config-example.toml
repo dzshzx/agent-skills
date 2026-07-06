@@ -8,7 +8,7 @@ project_globs = ["~/workspace/*"]
 # Which per-repo filenames are governed instruction surfaces.
 project_instruction_files = ["AGENTS.md", "CLAUDE.md"]
 # Files this skill must NEVER write or restructure (project workflow owners).
-off_limits = ["**/.trellis/**", "**/docs/agents/**", "**/conventions/**"]
+off_limits = ["**/docs/agents/**", "**/conventions/**"]
 # Soft budget for the natively-injected surface (entry files + all
 # load="always" sources, as expanded by the most eager agent).
 inject_budget_lines = 300
