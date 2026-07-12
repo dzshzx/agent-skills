@@ -14,6 +14,14 @@ off_limits = ["**/docs/agents/**", "**/conventions/**"]
 # load="always" sources, as expanded by the most eager agent).
 inject_budget_lines = 300
 
+# An exclusion is explicit, configuration-owned, and always reported; do not
+# infer exclusions from directory names or repository contents. Keep this
+# top-level array of tables after all [workspace] fields so its TOML scope
+# cannot absorb a workspace setting.
+# [[repository_exclusions]]
+# glob = "~/workspace/archived-copy"
+# reason = "Archived snapshot retained outside the governed estate"
+
 # Shared instruction sources — the vertical slices of the user level.
 # role  = what belongs here (the owner's split; the skill enforces it).
 # domain = slice name; load = "always" (native inject) | "on-demand" (lazy
@@ -45,6 +53,7 @@ load = "always"
 [[agents]]
 name = "claude-code"
 entry_file = "~/.claude/CLAUDE.md"
+always_load_mode = "native"
 # Required, project-relative, and owned only by claude-code. This surface must
 # not import, link to, defer to, or treat another owner's surface as authority.
 project_instruction_file = "CLAUDE.md"
@@ -56,6 +65,7 @@ runtime_constructs = ["WebFetch", "Edit", "Write"]
 [[agents]]
 name = "codex"
 entry_file = "~/.codex/AGENTS.md"
+always_load_mode = "mandatory-entry-read"
 # Required, project-relative, and owned only by codex. A sibling surface may
 # show similar content, but it is ParallelProject evidence, never coverage.
 project_instruction_file = "AGENTS.md"
@@ -63,4 +73,4 @@ agent_specific_file = "~/.codex/INSTRUCTION.md"
 skill_dirs = ["~/.agents/skills", "~/.codex/skills"]
 runtime_constructs = ["apply_patch", "codex apply", "codex/{feature}"]
 # Codex does not expand references natively; the entry file must carry an
-# explicit read-before-task instruction.
+# unconditional read-before-task instruction for every load="always" source.

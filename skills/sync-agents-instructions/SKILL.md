@@ -57,9 +57,11 @@ Fail closed when any of the following is true:
 - The legacy flat field and any `[[agents]].project_instruction_file` appear
   together. Report this specifically as a mixed schema; do not select either
   representation.
-- An `[[agents]]` record has no non-empty `name`, `entry_file`, or
-  `project_instruction_file`. The last field is the required project-surface
-  owner declaration; a missing value is a missing owner.
+- An `[[agents]]` record has no non-empty `name`, `entry_file`,
+  `project_instruction_file`, or `always_load_mode`. The project file is the
+  required project-surface owner declaration; `always_load_mode` declares how
+  that owner receives every `load = "always"` source. A missing value leaves
+  either ownership or shared coverage unprovable.
 - Two agent names normalize to the same value. Normalize by trimming and
   comparing case-insensitively; do not silently rename either agent.
 - Two `project_instruction_file` values normalize to the same owner surface.
@@ -69,6 +71,18 @@ Fail closed when any of the following is true:
 - A field needed to establish a claimed load route is malformed or missing
   (for example, a referenced shared source has no path or a load value other
   than `"always"` or `"on-demand"`).
+- `[workspace].off_limits` is absent or is not an array of path globs. An
+  explicit empty array is valid when the machine has no protected workflow
+  owners; its presence prevents a TOML table-scoping mistake from silently
+  dropping the protection.
+- An `always_load_mode` is other than `"native"` or
+  `"mandatory-entry-read"`. `"native"` still requires evidence that the
+  owner's runtime expands the exact sources. `"mandatory-entry-read"`
+  requires an unconditional, pre-task instruction in that owner's entry file;
+  advisory wording is not a load route.
+- A `[[repository_exclusions]]` record has no non-empty `glob` and `reason`,
+  or contains a field other than those two. Repository exclusions are the only
+  permitted way to omit a `project_globs` candidate from governance.
 
 `skill_dirs`, `agent_specific_file`, and `runtime_constructs` remain optional
 agent properties. They do not create a second project-surface owner.
@@ -77,21 +91,28 @@ agent properties. They do not create a second project-surface owner.
 
 - `[workspace]` — `project_globs`, `off_limits`, and optional
   `inject_budget_lines`. It does **not** own a project-instruction-file list.
+- `[[repository_exclusions]]` — optional, config-owned exceptions to a
+  `project_globs` candidate. Each has a `glob` and a human-readable `reason`.
+  They are reported in inventory and post-check accounting; heuristic labels
+  such as "temporary" or "third-party" never exclude a repository.
 - `[[shared_sources]]` — a user-level source with:
   - `role` — what belongs here (the config owner's split; this skill enforces
     the split it is given and does not invent one);
   - `domain` — the vertical slice it covers (`behavior`, `machine-facts`,
     `code-standards`, `frontend`, `docs-writing`, ... free-form);
-  - `load` — `"always"` (active through an owner entry's load route) or
+  - `load` — `"always"` (active through a verified owner entry load route) or
     `"on-demand"` (an owner entry carries an explicit task trigger).
 - `[workspace].off_limits` — glob patterns for project workflow owners this
   skill must never write or restructure (for example, workflow specs,
   conventions, or agent-process documentation). Report rules that belong
   there; never move them.
 - `[[agents]]` — one entry per AI agent, with required `name`, `entry_file`,
-  and `project_instruction_file`; optional `agent_specific_file`, `skill_dirs`,
-  and `runtime_constructs`. Adding support for an agent means adding this
-  complete record, not changing this skill.
+  `project_instruction_file`, and `always_load_mode`; optional
+  `agent_specific_file`, `skill_dirs`, and `runtime_constructs`. Adding
+  support for an agent means adding this complete record, not changing this
+  skill. `always_load_mode = "native"` names a runtime-backed expansion;
+  `"mandatory-entry-read"` names an entry instruction that must require the
+  owner to read every always-loaded source before its first task.
 
 ## Ownership and Isolation Model
 
@@ -118,12 +139,17 @@ repository or a different one:
 - delegate rules, workflow, or responsibility to it instead of stating the
   applicable content on the current owner's surface.
 
-User-level shared sources are wired only through the **same owner's**
-`entry_file` and its declared load scope. A project surface must not import or
-point at a user-level shared source either: that creates a second injection
-channel. When a cross-owner dependency is found, classify it as an
-**Isolation violation**. Plan its removal or replacement explicitly; never
-fix it by making one project surface depend on a different one.
+User-level shared sources reach an owner only through that **same owner's**
+`entry_file` and its verified load scope. A project surface may describe a
+user-level ownership boundary (for example, that shell behavior is maintained
+outside the repository) when the mention neither loads the source nor asks the
+owner to obtain instructions from it. It must not `@`-import a user-level
+source, tell the owner to read or defer to it, link to it as an instruction
+shortcut, or treat it as the authority replacing project rules; those actions
+create a second injection channel. When a cross-owner dependency is found,
+classify it as an **Isolation violation**. Plan its removal or replacement
+explicitly; never fix it by making one project surface depend on a different
+one.
 
 ## Placement Decision Model
 
@@ -146,10 +172,12 @@ Route every rule through both axes before writing anything.
    not-yet-promoted local rule costs one duplicate.
 
 **Reference and ownership invariant:** only a validated owner can govern its
-project surface. Project surfaces do not route to each other or to user-level
-sources. The relevant user-level source must instead be loaded through the
-same owner's `entry_file`; a project-level reference into a user directory is
-a duplicate injection channel, not coverage proof.
+project surface. Project surfaces never route to another owner's surface. A
+non-executable, non-authoritative description of a user-level boundary is
+permitted, but it never supplies coverage proof. The relevant shared source
+must instead reach the owner through that owner's verified `entry_file` load
+route; a project-level import, read/defer instruction, or authority claim into
+a user directory is a duplicate injection channel.
 
 ### Axis 2 — vertical slice (within user level)
 
@@ -188,9 +216,13 @@ Classify each candidate as follows:
 A `SharedCovered` claim needs a proof packet in the plan containing all of:
 
 1. The current project surface's normalized path and declared owner name.
-2. That owner's `entry_file` and the concrete route from it to the shared
-   source: a native include/configured expansion for `load = "always"`, or an
-   explicit owner-entry trigger for `load = "on-demand"`.
+2. That owner's `entry_file`, declared `always_load_mode`, and the concrete
+   verified route from it to the shared source. For `load = "always"`, prove
+   either the exact native include/configured expansion (`"native"`) or an
+   unconditional pre-task entry instruction that names or unambiguously covers
+   every always-loaded source (`"mandatory-entry-read"`). Words such as
+   "suggest", "may", "when useful", or an otherwise optional route fail this
+   proof. For `load = "on-demand"`, record the explicit owner-entry trigger.
 3. The shared source path, its `load` value, and the matching rule or section.
 4. For `on-demand`, the exact task scope named by the trigger and proof that
    the project-local rule applies only within that scope.
@@ -204,19 +236,25 @@ never authorizes a cross-owner reference.
 
 ## Workflow
 
-1. **Preflight and collect.** Run schema preflight first. Then inventory the
-   full estate: every Git repository under every `project_globs` entry,
-   pruning dependency trees, archives, temporary worktrees, and third-party
-   clones. For every repository and every declared owner, report whether that
-   owner's project surface exists; its ignored, dirty, and staged state; and
-   unrelated dirty paths. List non-Git directories as skipped with reason
-   `not a Git repo`.
+1. **Preflight and collect.** Run schema preflight first. Expand each
+   `project_globs` entry non-recursively and account for every candidate. A
+   candidate matching a configured `[[repository_exclusions]]` is reported as
+   excluded with its configured reason. Every other Git repository is governed
+   and inspected; do not heuristically prune dependency trees, archives,
+   temporary worktrees, or third-party clones. Deduplicate aliases that resolve
+   to the same Git root while reporting the alias relationship. For every
+   governed repository and every declared owner, report whether that owner's
+   project surface exists; its ignored, dirty, and staged state; and unrelated
+   dirty paths. List every non-Git candidate as skipped with reason `not a Git
+   repo`.
 
    Also inspect every existing project surface for isolation: cross-owner
    `@`-imports, links, authority claims, deferrals, and delegated instructions.
-   Inventory the relevant owner `entry_file` and shared-source load route so
-   later `SharedCovered` claims have evidence. This is an estate-wide check,
-   not just a scan of files expected to change.
+   Inventory the relevant owner `entry_file` and each shared-source load route
+   so later `SharedCovered` claims have evidence. For
+   `mandatory-entry-read`, reject advisory or conditional wording; for
+   `native`, record the concrete runtime expansion. This is an estate-wide
+   check, not just a scan of files expected to change.
 
 2. **Compare.** For each rule candidate, use the surface's declared owner and
    the owner-bound classification table above. Compare against the proposed or
@@ -234,8 +272,9 @@ never authorizes a cross-owner reference.
    - `Needs confirmation` rules and the unresolved decision;
    - user-level shared-source or owner-entry changes needed to create a valid
      load route, before any project-local removal;
-   - repositories or surfaces skipped for absence, `off_limits`, unsafe Git
-     state, or another reason.
+   - every project-glob candidate as governed, config-excluded (with reason),
+     non-Git, or an alias of a governed Git root; and every surface skipped for
+     absence or unsafe Git state.
 
    Report gitignored instruction files separately as local-only governed
    files. End the plan with the full-estate post-check: all repositories and
@@ -256,22 +295,27 @@ never authorizes a cross-owner reference.
    plan, report unexecuted repositories and stop.
 
 5. **Validate.** Run the per-file Git checks below. Then run the full-estate
-   post-check across every discovered repository and every configured owner,
-   including untouched surfaces. Confirm all of the following:
+   post-check across every governed repository and every configured owner,
+   including untouched surfaces, and reconcile it against every project-glob
+   candidate and configured exclusion. Confirm all of the following:
    - config preflight still passes and every normalized surface has one owner;
    - no project surface imports, links to, treats as authority, or delegates
-     to another owner surface;
+     to another owner surface; user-level references, if any, are only
+     non-executable boundary descriptions rather than imports, read/defer
+     instructions, shortcuts, or coverage claims;
    - every removed rule has its recorded same-owner `SharedCovered` proof;
    - no `ParallelProject` rule was removed because of sibling similarity;
    - each owner entry still provides the planned `always` or `on-demand` load
-     route, without project-level duplicate injection;
+     route, with mandatory—not advisory—entry wording when its mode is
+     `mandatory-entry-read`, and without project-level duplicate injection;
    - distinctive clauses from converged rules have no surviving unplanned
      copies. Remaining sibling copies are reported as `ParallelProject`, not
      silently treated as failures or removal candidates.
 
-   If the post-check finds an unplanned isolation violation, missing route, or
-   ambiguous surviving clause, report it and return to planning; do not claim
-   the estate is converged.
+   If the post-check finds an unplanned isolation violation, missing or
+   advisory route, unaccounted project-glob candidate, or ambiguous surviving
+   clause, report it and return to planning; do not claim the estate is
+   converged.
 
 ## Gitignored Instruction Files Are Governed, Not Skipped
 
@@ -331,6 +375,10 @@ Treat it as a distinct governance class:
   even if most of it overlaps with a shared source.
 - Do not touch managed blocks, force-add a gitignored file, commit shared
   sources, or write into `off_limits` paths.
+- Do not heuristically prune a `project_globs` candidate. Use only a validated
+  `[[repository_exclusions]]` record and report its configured reason.
+- Do not treat an advisory entry-file reference as an `always` load route or
+  as `SharedCovered` proof.
 - Do not stash, reset, checkout, or clean unrelated dirty paths.
 - Do not hardcode discovered machine topology back into this SKILL.md; it
   belongs in the per-machine config file.
@@ -344,9 +392,14 @@ Before each project instruction-file commit, run:
 ```bash
 git status --short
 git diff -- <owner-surface>
-git check-ignore -v -- <owner-surface>
 git diff --check -- <owner-surface>
 ```
+
+Run `git check-ignore -v -- <owner-surface>` as a classified check rather than
+a fail-fast command: exit `0` identifies an ignored local-only surface, exit
+`1` is the expected result for a tracked or non-ignored surface, and any other
+exit status fails validation. Record the first case separately; continue with
+the tracked-file checks in the second case.
 
 For user-level files, use a content diff and verify the approved owner load
 route. After each project commit, verify unrelated staged paths remain staged
