@@ -2,21 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this repo is
+## 这个仓库是什么
 
-A collection of reusable agent skills following the [Agent Skills](https://agentskills.io) open standard, installable across AI coding agents (Claude Code, Codex, Cursor, ...) via `npx skills add dzshzx/agent-skills`. Each skill is a directory under `skills/<name>/` with a `SKILL.md` (YAML frontmatter: `name` + `description`) plus optional `references/`, `scripts/`, `tests/`, and `agents/` (per-agent interface metadata, e.g. `agents/openai.yaml`).
+一组遵循 [Agent Skills](https://agentskills.io) 开放标准的可复用 agent skill，可经 `npx skills add dzshzx/agent-skills` 跨 AI 编码 agent（Claude Code、Codex、Cursor……）安装。每个 skill 是 `skills/<name>/` 下的一个目录，含一个 `SKILL.md`（YAML frontmatter：`name` + `description`），外加可选的 `references/`、`scripts/`、`tests/` 和 `agents/`（per-agent 接口元数据，如 `agents/openai.yaml`）。
 
-Skills here are **prompt-instructions-as-product**: the SKILL.md body is the deliverable, and edits to it are behavior changes for every agent that installs it.
+这里的 skill 是 **prompt-instructions-as-product**：SKILL.md 正文即交付物，对它的编辑就是对每个安装它的 agent 的行为改动。
 
-## Design rules (enforced, from README)
+## 设计规则（强制，来自 README）
 
-- **No machine-specific facts in SKILL.md.** Paths, hostnames, and machine topology live in per-machine config files (see `skills/sync-agents-instructions/references/config-example.toml`) or are resolved relative to the skill directory (`${CLAUDE_SKILL_DIR}` on Claude Code; "the folder containing this SKILL.md" elsewhere).
-- **Platform facts are fine; machine facts are not.** A skill may rely on how an agent platform stores data, but never on one machine's layout. If a change would hardcode discovered topology into a SKILL.md, put it in the config schema/example instead.
-- Adding support for a new agent to `sync-agents-instructions` means adding an `[[agents]]` entry to the machine config — the SKILL.md body must stay agent-generic.
-- Releases are tagged for reproducible installs.
+- **SKILL.md 内不放机器专属事实。** 路径、主机名和机器拓扑放在 per-machine config 文件里（见 `skills/sync-agents-instructions/references/config-example.toml`），或相对 skill 目录解析（Claude Code 上用 `${CLAUDE_SKILL_DIR}`；其他环境用「包含本 SKILL.md 的目录」）。
+- **平台事实可以；机器事实不行。** skill 可以依赖某个 agent 平台如何存储数据，但绝不依赖某一台机器的布局。若某改动会把探得的拓扑硬编码进 SKILL.md，改为放进 config schema/example。
+- 给 `sync-agents-instructions` 增加对一个新 agent 的支持，意味着往 machine config 里加一条 `[[agents]]` 条目——SKILL.md 正文必须保持 agent-generic。
+- Release 打 tag 以保证安装可复现。
 
-## Working on skills
+## 开发 skill
 
-- Skill descriptions (frontmatter `description`) double as the trigger/routing text agents use to decide when to invoke the skill — keep trigger phrases and scope boundaries ("not responsible for X") intact when editing.
-- These skills also exist as installed copies in agent runtime dirs (e.g. `~/.claude/skills/`, `~/.agents/skills/`) — this repo is the source of truth (baseline was imported from runtime dirs in the initial commit). After editing a skill here, installed copies are stale until re-installed/synced; don't edit runtime copies directly.
-- Commit messages follow the existing pattern: `skill(<name>): ...` / `feat(<name>): ...` / `chore: ...`, and README's skill table should stay in sync with what's under `skills/`.
+- skill 描述（frontmatter `description`）同时充当 agent 决定何时调用该 skill 的触发/路由文本——编辑时保持触发短语和范围边界（「不负责 X」）完整。
+- 这些 skill 也以安装拷贝形式存在于 agent runtime 目录（如 `~/.claude/skills/`、`~/.agents/skills/`）——本仓是唯一真源（基线在 initial commit 中从 runtime 目录导入）。在这里编辑一个 skill 后，安装拷贝在重新 install/sync 前即过期；不要直接编辑 runtime 拷贝。
+- 提交信息沿用既有模式：`skill(<name>): ...` / `feat(<name>): ...` / `chore: ...`，且 README 的 skill 表应与 `skills/` 下的内容保持同步。
