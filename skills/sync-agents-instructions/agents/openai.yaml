@@ -1,4 +1,4 @@
 interface:
   display_name: "Sync AGENTS Instructions"
-  short_description: "Govern shared agent rules — sync refs and converge duplicates"
-  default_prompt: "治理 workspace 共享 agent 指令：同步引用、收敛重复规则"
+  short_description: "Govern independent per-agent instruction surfaces"
+  default_prompt: "治理 workspace 的独立 per-agent 指令面：验证 owner-bound 配置、隔离跨 owner 依赖，并只收敛同一 owner 已证明覆盖的规则"

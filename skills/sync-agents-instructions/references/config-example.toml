@@ -5,8 +5,9 @@
 [workspace]
 # Where project repos live (globs, evaluated non-recursively per entry).
 project_globs = ["~/workspace/*"]
-# Which per-repo filenames are governed instruction surfaces.
-project_instruction_files = ["AGENTS.md", "CLAUDE.md"]
+# Each independent project instruction surface is instead declared by its
+# owning [[agents]] entry below. Do not add the legacy flat
+# project_instruction_files field here.
 # Files this skill must NEVER write or restructure (project workflow owners).
 off_limits = ["**/docs/agents/**", "**/conventions/**"]
 # Soft budget for the natively-injected surface (entry files + all
@@ -37,11 +38,16 @@ load = "always"
 # domain = "frontend"
 # load = "on-demand"
 
-# One entry per AI agent on this machine. Supporting a new agent is adding an
-# entry here — the skill body never changes.
+# One entry per AI agent on this machine. Each agent owns exactly one
+# independent project instruction surface; its normalized owner path and name
+# must be unique. Supporting a new agent is adding a complete entry here — the
+# skill body never changes.
 [[agents]]
 name = "claude-code"
 entry_file = "~/.claude/CLAUDE.md"
+# Required, project-relative, and owned only by claude-code. This surface must
+# not import, link to, defer to, or treat another owner's surface as authority.
+project_instruction_file = "CLAUDE.md"
 skill_dirs = ["~/.claude/skills"]
 runtime_constructs = ["WebFetch", "Edit", "Write"]
 # Claude Code natively expands @-imports: its injected surface = entry + all
@@ -50,6 +56,9 @@ runtime_constructs = ["WebFetch", "Edit", "Write"]
 [[agents]]
 name = "codex"
 entry_file = "~/.codex/AGENTS.md"
+# Required, project-relative, and owned only by codex. A sibling surface may
+# show similar content, but it is ParallelProject evidence, never coverage.
+project_instruction_file = "AGENTS.md"
 agent_specific_file = "~/.codex/INSTRUCTION.md"
 skill_dirs = ["~/.agents/skills", "~/.codex/skills"]
 runtime_constructs = ["apply_patch", "codex apply", "codex/{feature}"]

@@ -16,7 +16,7 @@ skill is a directory under `skills/` with a `SKILL.md` plus optional
 
 | Skill | What it does |
 | --- | --- |
-| [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs shared agent instruction rules across a workspace: converges duplicated rules from per-repo `AGENTS.md`/`CLAUDE.md` into shared instruction sources and keeps references wired, for any set of agents. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic. |
+| [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs independent per-agent project instruction surfaces across a workspace: each configured agent owns one project file; a local rule is converged only when a shared source is proven available through that same owner’s user-level load scope, while cross-owner imports and delegation are rejected. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic. |
 
 ## Design rules
 
@@ -27,6 +27,9 @@ skill is a directory under `skills/` with a `SKILL.md` plus optional
 - **Platform facts are fine; machine facts are not.** A skill may rely on how
   an agent stores its data (platform-generic); it may not hardcode one
   machine's layout.
+- **Project instruction surfaces are independent per agent.** Each
+  `[[agents]]` entry declares its own `project_instruction_file`; a surface
+  may not import, defer to, or treat another owner’s surface as authority.
 - Releases are tagged; install a specific version with the skills CLI when
   reproducibility matters.
 
