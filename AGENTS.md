@@ -11,3 +11,17 @@
 - 修改后检查目标 diff 并运行最小相关验证；提交信息沿用
   `skill(<name>): …`、`feat(<name>): …` 或 `chore: …`。
 - Release 使用 tag，保证 `npx skills add dzshzx/agent-skills` 的安装可复现。
+
+## Agent skills
+
+### Issue tracker
+
+issue 跟踪在 GitHub Issues（`dzshzx/agent-skills`，经 `gh` CLI 读写）。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用五个默认 triage 标签（`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`）。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context 布局——根目录 `CONTEXT.md` + `docs/adr/`（按需惰性创建）。见 `docs/agents/domain.md`。

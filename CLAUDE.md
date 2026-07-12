@@ -20,3 +20,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - skill 描述（frontmatter `description`）同时充当 agent 决定何时调用该 skill 的触发/路由文本——编辑时保持触发短语和范围边界（「不负责 X」）完整。
 - 这些 skill 也以安装拷贝形式存在于 agent runtime 目录（如 `~/.claude/skills/`、`~/.agents/skills/`）——本仓是唯一真源（基线在 initial commit 中从 runtime 目录导入）。在这里编辑一个 skill 后，安装拷贝在重新 install/sync 前即过期；不要直接编辑 runtime 拷贝。
 - 提交信息沿用既有模式：`skill(<name>): ...` / `feat(<name>): ...` / `chore: ...`，且 README 的 skill 表应与 `skills/` 下的内容保持同步。
+
+## Agent skills
+
+### Issue tracker
+
+issue 跟踪在 GitHub Issues（`dzshzx/agent-skills`，经 `gh` CLI 读写）。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用五个默认 triage 标签（`needs-triage` / `needs-info` / `ready-for-agent` / `ready-for-human` / `wontfix`）。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+single-context 布局——根目录 `CONTEXT.md` + `docs/adr/`（按需惰性创建）。见 `docs/agents/domain.md`。
