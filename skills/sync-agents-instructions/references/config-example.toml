@@ -5,19 +5,14 @@
 [workspace]
 # Where project repos live (globs, evaluated non-recursively per entry).
 project_globs = ["~/workspace/*"]
-# Each independent project instruction surface is instead declared by its
-# owning [[agents]] entry below. Do not add the legacy flat
-# project_instruction_files field here.
 # Files this skill must NEVER write or restructure (project workflow owners).
 off_limits = ["**/docs/agents/**", "**/conventions/**"]
 # Soft budget for the natively-injected surface (entry files + all
 # load="always" sources, as expanded by the most eager agent).
 inject_budget_lines = 300
 
-# An exclusion is explicit, configuration-owned, and always reported; do not
-# infer exclusions from directory names or repository contents. Keep this
-# top-level array of tables after all [workspace] fields so its TOML scope
-# cannot absorb a workspace setting.
+# Exclusions are explicit and config-owned — never inferred from directory
+# names or repo contents.
 # [[repository_exclusions]]
 # glob = "~/workspace/archived-copy"
 # reason = "Archived snapshot retained outside the governed estate"
@@ -67,9 +62,8 @@ name = "codex"
 entry_file = "~/.codex/AGENTS.md"
 always_load_mode = "mandatory-entry-read"
 # Required, project-relative, and owned only by codex. A sibling surface may
-# show similar content, but it is ParallelProject evidence, never coverage.
+# show similar content, but that is promotion evidence, never coverage.
 project_instruction_file = "AGENTS.md"
-agent_specific_file = "~/.codex/INSTRUCTION.md"
 skill_dirs = ["~/.agents/skills", "~/.codex/skills"]
 runtime_constructs = ["apply_patch", "codex apply", "codex/{feature}"]
 # Codex does not expand references natively; the entry file must carry an
