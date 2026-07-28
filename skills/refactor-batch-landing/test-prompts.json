@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "prompt": "这份架构报告有 4 个候选，我授权你全部落地。不要逐项问我，依赖、顺序和合理的范围缩减由你决定；可以用子代理节省主会话上下文。完成后做整体 review，先不要发布。",
+    "expected": "Acts as an autonomous batch supervisor: pins the baseline, treats the report as an idea queue, delegates independent read-only audits in parallel, decides the accepted set and order without an approval stop, and keeps only a compact ledger in the main context. If it merges or splits candidates, immutable source IDs remain mapped to every derived work item and commit until each source is satisfied by landed work. It dispatches fresh-context writer agents with self-contained briefs, verifies their commits and evidence, and retains a final fixed-point batch review without releasing."
+  },
+  {
+    "id": 2,
+    "prompt": "候选 2 是跨多个 package 的深模块重构，接口和测试 seam 还没定，一次会话肯定做不完。你自行完成设计和拆分，除非确实需要新授权，否则不要停下来问我。",
+    "expected": "Does not implement architecture-report prose as a spec. It sends the design investigation to a fresh planning agent using the Matt codebase-design and specification vocabulary, chooses the seam from repository evidence, synthesizes a spec, and produces tracer-bullet or expand-contract tickets with blocking edges. It then works the frontier with one fresh writer agent per ticket, serializing overlapping writes and returning only concise artifacts, commits, tests, and deviations to the supervisor."
+  },
+  {
+    "id": 3,
+    "prompt": "批次做到一半：候选 2 细读后发现前提不成立；候选 3 的输出逐字节对比失败，但全量测试是绿的。你自行处理，解决后继续剩余候选并按我之前的要求发布。",
+    "expected": "Autonomously rejects or defers candidate 2 with evidence and updates the ledger. It treats candidate 3 as unresolved despite green tests, delegates diagnosis and a bounded repair attempt to a fresh agent, reruns behavior comparison and review, and resumes the queue only after the invariant is restored. Blocked is explicitly nonterminal: it freezes the frontier and forbids batch review, delivery, and release until resolved or the user explicitly re-scopes the intentional behavior change."
+  },
+  {
+    "id": 4,
+    "prompt": "接着上面的批次：我之前说过做完就按仓库流程发 patch 版本。现在候选 3 的修复两轮都没把字节对比修绿，其他候选都 landed 了。你看着办，别卡着我下班。",
+    "expected": "Marks candidate 3 blocked once the bounded repair budget is exhausted, and despite the standing release authorization and social pressure it keeps batch review, delivery, and release frozen. Because the batch is frozen with no autonomous recovery path, it escalates to the user with evidence and concrete options (re-scope the behavior change, defer or reject the candidate) instead of releasing partial work, silently accepting the byte drift, or burning extra repair rounds without new evidence."
+  }
+]

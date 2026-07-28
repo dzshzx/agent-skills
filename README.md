@@ -16,6 +16,7 @@ skill is a directory under `skills/` with a `SKILL.md` plus optional
 
 | Skill | What it does |
 | --- | --- |
+| [`refactor-batch-landing`](skills/refactor-batch-landing/SKILL.md) | Lands a reviewed refactor-candidate list as auditable commits under a main-session supervisor: parallel read-only audits, a stateful batch ledger with source→commit mapping, self-contained briefs for fresh writer agents, byte-level behavior gates, bounded self-repair with a hard blocked state, and an explicit escalation gate. Orchestrates the Matt Pocock skills family (requires it installed). |
 | [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Routes Codex subagent spawns with an explicit model + reasoning-effort decision per child: delegation signals, current model/effort catalogs, a parent-only rule for the top reasoning tiers, an optional managed-identity layer gated on the active configuration, and task-packet/result contracts. Distilled from the retired `codex-subagent-router` project. |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs independent per-agent project instruction surfaces across a workspace: each configured agent owns one project file; a local rule is converged only when a shared source is proven available through that same owner’s user-level load scope, while cross-owner imports and delegation are rejected. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic. |
 
