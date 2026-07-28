@@ -28,7 +28,7 @@ Before committing, the writer must pass targeted tests, the full suite, existing
 
 ## Failure
 
-- A failed gate freezes new work: one fresh repair attempt per falsifiable root cause, rerunning every gate. Two failed rounds without new evidence → `blocked`; no third.
+- A failed gate freezes new work: one fresh repair attempt per falsifiable root cause, rerunning every gate plus `/code-review` on the fix. Two failed rounds without new evidence → `blocked`; no third.
 - A writer leaving dirty state or no commit → a repair agent takes over; never reset or overwrite unknown changes.
 - Subagents unavailable → record the packet in the ledger and mark `blocked`; the main session never takes over implementation.
 - `blocked` freezes batch review, delivery, and release; changing a blocked item's disposition is the user's call alone. Escalate with evidence and concrete options (re-scope, defer, reject).
