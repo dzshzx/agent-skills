@@ -38,7 +38,11 @@ infer a topology from directory listings. See
   `always_load_mode` (`"native"` = the runtime expands the entry's imports;
   `"mandatory-entry-read"` = the entry carries an unconditional
   read-before-work instruction covering every `load = "always"` source);
-  optional `agent_specific_file`, `skill_dirs`, `runtime_constructs`.
+  optional `agent_specific_file`, `skill_dirs`, `runtime_constructs`,
+  `readonly_project_surfaces` (surfaces owned by *other* configured agents
+  that this agent's runtime also auto-loads; each entry must match another
+  agent's `project_instruction_file`; read visibility only, never edit
+  rights or ownership).
   Supporting a new agent means adding an entry here, not changing this skill.
 - `[[repository_exclusions]]` — `glob` + `reason`; the only way to exempt a
   repo candidate. Do not prune heuristically.
@@ -95,6 +99,10 @@ Remove a project-local rule only when all three hold **for the same owner**:
    trigger whose scope covers every case the local rule applies to. Advisory
    wording ("suggest", "when useful") is not a load route.
 3. Nothing project- or agent-specific is lost.
+
+When another configured agent lists this surface in
+`readonly_project_surfaces`, the same three checks must also pass through
+that reader's own entry load route; a rule covered only for the owner stays.
 
 Record the covering source and load route in the plan. Similar wording in
 another project's surface is promotion evidence, never removal evidence.

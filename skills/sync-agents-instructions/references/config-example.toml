@@ -68,3 +68,16 @@ skill_dirs = ["~/.agents/skills", "~/.codex/skills"]
 runtime_constructs = ["apply_patch", "codex apply", "codex/{feature}"]
 # Codex does not expand references natively; the entry file must carry an
 # unconditional read-before-task instruction for every load="always" source.
+
+# An agent's runtime may also auto-load surfaces owned by other agents
+# (e.g. a runtime that injects the repo-root AGENTS.md additively). Declare
+# those in readonly_project_surfaces: read visibility only, never edit
+# rights; removing a rule from such a surface must re-verify coverage
+# through this reader's own entry load route as well.
+# [[agents]]
+# name = "kimi-code"
+# entry_file = "~/.kimi-code/AGENTS.md"
+# always_load_mode = "mandatory-entry-read"
+# project_instruction_file = ".kimi-code/AGENTS.md"
+# skill_dirs = ["~/.agents/skills", "~/.kimi-code/skills"]
+# readonly_project_surfaces = ["AGENTS.md"]
