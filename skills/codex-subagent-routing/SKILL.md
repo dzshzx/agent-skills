@@ -26,15 +26,16 @@ Keep in the parent thread:
 
 ## Route options
 
-The catalogs below track the current Codex model lineup (gpt-5.6). Update
-this section when the lineup or tier naming changes; do not keep routing to
-retired names.
+The active `spawn_agent` tool schema is the authority for model names in the
+current turn. Read its exposed overrides before every spawn and never route to
+a model that the live schema does not offer. The table below records the
+models exposed in the current Codex environment; update it when the runtime
+schema changes.
 
 Models:
 
 | Model | Description |
 |---|---|
-| gpt-5.6-luna | Lightweight model. |
 | gpt-5.6-terra | General-purpose model. |
 | gpt-5.6-sol | Highest-capability model. |
 
@@ -63,6 +64,8 @@ otherwise omit agent_type and route by model and effort alone.
 ## Spawn contract
 
 - Choose every routed child explicitly with model and reasoning_effort.
+- Choose `model` only from the active `spawn_agent` schema; do not infer an
+  unavailable lightweight tier from product-family naming.
 - Set agent_type when a suitable declared role exists; omit it otherwise.
 - On MultiAgent V2, also set task_name (lowercase letters, digits, and underscores only) and fork_turns="none" for independent work or a positive integer string for limited recent context; do not use full-history all with explicit routing.
 - On stable MultiAgent V1, leave fork_context false or omitted; do not spawn full-history forks with explicit routing.
