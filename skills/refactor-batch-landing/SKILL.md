@@ -35,7 +35,7 @@ Before committing, the writer must pass targeted tests, the full suite, existing
 
 ## Batch review and delivery
 
-When every source is landed/rejected/deferred and nothing is blocked, run `/code-review` over `batch_base...HEAD` plus the full suite; route blocking findings to writers and rerun until green. Release only on a recorded release authorization, executing exactly the repository's documented release action; otherwise stop at local commits. Report per source: disposition, commits, verification, deviations, delivery state.
+When every source is landed/rejected/deferred and nothing is blocked, run `/code-review` over `batch_base...HEAD` plus the full suite — the batch's **only** full-range discovery pass. A finding blocks delivery only when the batch diff introduced the defect or a gate the batch promised fails; defects already present at `batch_base`, and hardening beyond what the landed candidates promised, are **new candidates**: record them with severity in the ledger for a future authorization and keep delivering. Route blocking findings to writers under the Failure rules; a rerun verifies prior findings closed and reviews only the repair diffs — never a fresh full-range discovery. Release only on a recorded release authorization, executing exactly the repository's documented release action; otherwise stop at local commits. Report per source: disposition, commits, verification, deviations, delivery state, and any recorded follow-up candidates.
 
 ## Escalation
 
