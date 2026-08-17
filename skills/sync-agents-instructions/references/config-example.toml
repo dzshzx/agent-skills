@@ -7,9 +7,8 @@
 project_globs = ["~/workspace/*"]
 # Files this skill must NEVER write or restructure (project workflow owners).
 off_limits = ["**/docs/agents/**", "**/conventions/**"]
-# Soft budget for the natively-injected surface (entry files + all
-# load="always" sources, as expanded by the most eager agent).
-inject_budget_lines = 300
+# The natively-injected surface (entry files + all load="always" sources) is
+# sized by value, not by line count — see SKILL.md for the demote signals.
 
 # Exclusions are explicit and config-owned — never inferred from directory
 # names or repo contents.
@@ -33,8 +32,8 @@ role = "stable agent-agnostic behavior contract (incl. seed sections for future 
 domain = "behavior"
 load = "always"
 
-# Example of an on-demand domain slice (create only when rules reach minimum
-# mass — roughly >=5 rules or one cohesive theme):
+# Example of an on-demand domain slice (create one when the rules share a
+# cohesive theme an entry file can point at with a single trigger sentence):
 # [[shared_sources]]
 # path = "~/.config/agent-instructions/frontend.md"
 # role = "cross-project frontend standards"

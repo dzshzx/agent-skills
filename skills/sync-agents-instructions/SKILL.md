@@ -29,8 +29,7 @@ infer a topology from directory listings. See
 [references/config-example.toml](references/config-example.toml).
 
 - `[workspace]` — `project_globs` (repo candidates, expanded non-recursively),
-  `off_limits` (paths this skill never writes), optional
-  `inject_budget_lines` (default 300).
+  `off_limits` (paths this skill never writes).
 - `[[shared_sources]]` — `path`, `role` (what belongs there), `domain`
   (slice), `load` = `"always"` | `"on-demand"`.
 - `[[agents]]` — one per agent: `name`, `entry_file`,
@@ -71,7 +70,10 @@ surface depend on a different one.
 2. Is project workflow or executable convention (how to test/branch/release)
    → its `off_limits` owner; report it, never absorb it.
 3. Holds across two or more projects with no project atoms → user level.
-   Rule of two: promote on the second sighting, not the first.
+   Promote when the rule is stated without project atoms and would apply
+   unchanged to any repo on this machine — a second sighting corroborates
+   that, it is not a precondition. Similar wording in another project is
+   corroboration too, never proof on its own.
 4. Unsure → leave it local and flag it as a promotion candidate.
 
 **Axis 2 — vertical slice within the user level.**
@@ -83,11 +85,17 @@ surface depend on a different one.
 | one technical domain | that domain's slice | `on-demand` (one-line trigger in entries) |
 | only one agent | that agent's entry file (or `agent_specific_file`) | that owner's scope |
 
-Anti-fragmentation: a new slice needs roughly five rules or one cohesive
-theme; below that, use a named section of the nearest existing file. Keep
-each owner's natively loaded surface (entry + all `always` sources) within
-`inject_budget_lines`; when over budget, demote domain sections to
-`on-demand` before trimming content.
+Anti-fragmentation: a new slice needs one cohesive theme that an entry file
+can point at with a single trigger sentence; below that, use a named section
+of the nearest existing file.
+
+Size the natively loaded surface (entry + all `always` sources) by value, not
+by line count — lines are a poor proxy, since the same rule can be one long
+line or five short ones. Demote the least-used domain section to `on-demand`
+when any of these show up: the surface needs an index to stay readable; one
+rule has to be repeated in several places to make sense; a section only
+matters for a few task shapes yet loads every time; or an agent measurably
+starts missing the rules near the end.
 
 ## Removal rule
 
@@ -106,7 +114,8 @@ that reader's own entry load route; a rule covered only for the owner stays.
 
 Record the covering source and load route in the plan. Similar wording in
 another project's surface is promotion evidence, never removal evidence.
-When coverage is partial or unclear, keep the rule and ask.
+When coverage is partial or unclear, keep the rule and note it in the
+summary; ask only when the ambiguity changes what you would write.
 
 ## Workflow
 
@@ -116,7 +125,11 @@ When coverage is partial or unclear, keep the rule and ask.
 2. Classify each candidate rule: shared-covered / project-specific /
    parallel-project / unsure.
 3. 🔴 Present the plan — additions, removals with their coverage proof,
-   isolation fixes — and wait for user confirmation before any write.
+   isolation fixes. Wait for confirmation before the writes you cannot take
+   back: removing a project-local rule, writing a gitignored instruction file
+   (no version history to fall back on), or touching an `off_limits` surface.
+   Additions to shared sources and isolation fixes in git-tracked surfaces
+   proceed within the current request — report them with their diff.
 4. Execute shared sources and entry load routes first, then project-local
    removals, re-checking that the recorded coverage still holds. Edit only
    the declared owner's surface; do not create missing surfaces.
