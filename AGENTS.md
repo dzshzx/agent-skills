@@ -10,7 +10,9 @@
 - 采用小而完整的 patch，并让 README 的 skill 表与 `skills/` 目录保持同步。
 - 修改后检查目标 diff 并运行最小相关验证；提交信息沿用
   `skill(<name>): …`、`feat(<name>): …` 或 `chore: …`。
-- Release 使用 tag，保证 `npx skills add dzshzx/agent-skills` 的安装可复现。
+- Release 候选先合入 `master`，等待该同一 SHA 的 CI 通过，再创建匹配的带
+  注解 `vX.Y.Z` tag，保证 `npx skills add dzshzx/agent-skills` 的安装可复现。
+  远端发布 tag 不移动、不复用；失败修复使用下一个 patch 版本。
 
 ## Agent skills
 

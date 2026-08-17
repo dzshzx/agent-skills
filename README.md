@@ -37,8 +37,27 @@ that family was uninstalled. Recover it from git history if the family returns.
 - **Project instruction surfaces are independent per agent.** Each
   `[[agents]]` entry declares its own `project_instruction_file`; a surface
   may not import, defer to, or treat another owner’s surface as authority.
-- Releases are tagged; install a specific version with the skills CLI when
-  reproducibility matters.
+- Release candidates land on `master` first. After CI passes on that exact
+  commit, create its annotated `vX.Y.Z` tag. Published tags are immutable and
+  never reused; a failed release is fixed in the next patch version. Install a
+  specific tag with the skills CLI when reproducibility matters.
+
+## Releases
+
+Before tagging, run the same repository validation locally:
+
+```bash
+python scripts/validate_repository.py
+```
+
+Then push the candidate, wait for CI on its exact SHA, and tag that commit:
+
+```bash
+git push origin master
+# Wait for CI on this exact master SHA to pass.
+git tag -a v0.1.2 -m "Release v0.1.2"
+git push origin v0.1.2
+```
 
 ## License
 

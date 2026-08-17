@@ -13,7 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **SKILL.md 内不放机器专属事实。** 路径、主机名和机器拓扑放在 per-machine config 文件里（见 `skills/sync-agents-instructions/references/config-example.toml`），或相对 skill 目录解析（Claude Code 上用 `${CLAUDE_SKILL_DIR}`；其他环境用「包含本 SKILL.md 的目录」）。
 - **平台事实可以；机器事实不行。** skill 可以依赖某个 agent 平台如何存储数据，但绝不依赖某一台机器的布局。若某改动会把探得的拓扑硬编码进 SKILL.md，改为放进 config schema/example。
 - 给 `sync-agents-instructions` 增加对一个新 agent 的支持，意味着往 machine config 里加一条 `[[agents]]` 条目——SKILL.md 正文必须保持 agent-generic。
-- Release 打 tag 以保证安装可复现。
+- Release 候选先合入 `master`，等待该同一 SHA 的 CI 通过，再创建匹配的带注解
+  `vX.Y.Z` tag 以保证安装可复现。远端发布 tag 不移动、不复用；失败修复使用
+  下一个 patch 版本。
 
 ## 开发 skill
 
