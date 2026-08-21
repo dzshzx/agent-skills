@@ -104,5 +104,5 @@ You are the {agent_type} for this delegated task. Do not spawn further agents.
 - Ask children for conclusions plus file:line evidence coordinates, not pasted file bodies; read coordinates on demand.
 - Give every child an explicit return structure and length budget.
 - Split parallel children across disjoint files, modules, or topics.
-- Retry one failed child at most once, then take the work back into the parent.
+- Retry a failed child only when you can name what went wrong and change the brief to address it; a repeat failure of the same kind means the task is not delegable as framed — take the work back into the parent instead of re-spawning.
 - Each child costs a fixed startup overhead; do not delegate work smaller than that overhead.
