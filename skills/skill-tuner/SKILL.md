@@ -127,7 +127,7 @@ frontmatter 触发词、花叔生态内部 skill 名引用、明确标注 runtim
 
 ```
 1. 确认优化范围：
-   - 全部skills → 扫描 .claude/skills/*/SKILL.md
+   - 全部skills → 扫描 ~/.agents/skills/*/SKILL.md（本机共享 skills 目录；Claude/Codex/Kimi 各自的 skills 目录是指向它的 symlink）
    - 指定skills → 用户指定列表
 2. 创建 git 分支：auto-optimize/YYYYMMDD-HHMM
 3. 初始化 `<workfiles>/results.tsv`（如不存在）
@@ -410,7 +410,7 @@ paired 行：`new_score` 栏记 vote 比数（如 `3-0 better`），`note` 记�
 5. **尊重花叔风格** — 中文为主、简洁为上
 6. **可回滚** — 所有改动在git分支上，用git revert而非reset --hard
 7. **评分独立性** — 效果维度必须用子agent或至少干跑验证，不能在同一上下文里「改完直接评」
-8. **Runtime 中立性** — skill 必须能在 Claude Code、Codex、Cursor、OpenClaw、Hermes 等任何 skills-compatible runtime 中正常运行。除非 skill 名明确绑定单一 runtime（如 `xxx-codex`、`huashu-slides-codex`），任何「在 Claude Code 里」「Claude Code skill」「单一 badge 钉死」「安装命令只给 `.claude/skills/` 一种路径」都视为 gate 不通过，须在 P0 优先修复（详见「Runtime 适配性审查」章节）
+8. **Runtime 中立性** — skill 必须能在 Claude Code、Codex、Cursor、OpenClaw、Hermes 等任何 skills-compatible runtime 中正常运行。除非 skill 名明确绑定单一 runtime（如 `xxx-codex`、`huashu-slides-codex`），任何「在 Claude Code 里」「Claude Code skill」「单一 badge 钉死」「安装命令只给 `~/.agents/skills/` 一种路径」都视为 gate 不通过，须在 P0 优先修复（详见「Runtime 适配性审查」章节）
 
 ---
 
