@@ -5,8 +5,11 @@ Codex, Cursor, ...) via the [skills CLI](https://skills.sh):
 
 ```bash
 npx skills add dzshzx/agent-skills            # all skills
-npx skills add dzshzx/agent-skills --skill=<name>
+npx skills add dzshzx/agent-skills --skill <name>
 ```
+
+Pass `--skill` space-separated. The CLI does not recognise `--skill=<name>`;
+it silently drops the flag and installs every skill in the repository.
 
 Skills follow the [Agent Skills](https://agentskills.io) open standard: each
 skill is a directory under `skills/` with a `SKILL.md` plus optional
