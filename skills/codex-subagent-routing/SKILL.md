@@ -71,33 +71,14 @@ otherwise omit agent_type and route by model and effort alone.
 - On stable MultiAgent V1, leave fork_context false or omitted; do not spawn full-history forks with explicit routing.
 - Do not omit routed fields or silently rewrite them.
 
-## Task packet template
+## Task packet
 
-Fill this skeleton for every child message:
+A child brief must stand alone: goal, read/write boundaries, acceptance bar, and return shape — enough for the child to act without parent history. Optional checklist below; take only what the task shape calls for, not a field-by-field form.
 
-```markdown
-# Task identity
-You are the {agent_type} for this delegated task. Do not spawn further agents.
-
-## Goal
-- Overall goal:
-- Your bounded subgoal:
-
-## Boundaries
-- May read:
-- May write (if any):
-- Do not touch:
-
-## Return contract
-- Return conclusions with file:line evidence coordinates and confidence.
-- Do not paste large source excerpts.
-- Structure and length budget:
-
-## Acceptance
-- Done when:
-- Required verification:
-- On missing information: report the gap; do not guess.
-```
+- Goal: overall goal, child's bounded subgoal.
+- Boundaries: may read, may write, must not touch.
+- Acceptance: done-when, required verification, on-missing-info handling.
+- Return shape: format, evidence style, length budget.
 
 ## Result contract
 
