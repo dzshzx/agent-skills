@@ -1,6 +1,6 @@
 ---
 name: sync-agents-instructions
-description: Govern per-agent project instruction surfaces (CLAUDE.md, AGENTS.md, ...) across a workspace of repos — route each rule to the right level and vertical slice via a per-machine config, keep every surface isolated to its one owner, and remove a project-local rule only when that same owner provably loads it from a shared source. Use when asked to sync AGENTS.md/CLAUDE.md rules, add or update shared agent instructions, make per-agent project instruction surfaces independent, or deduplicate agent rules.
+description: Govern per-agent project instruction surfaces (CLAUDE.md, AGENTS.md) via a per-machine config. Use when asked to sync AGENTS.md/CLAUDE.md rules, add or update shared agent instructions, make surfaces independent, or deduplicate agent rules.
 ---
 
 # Sync Agents Instructions
@@ -12,12 +12,14 @@ configured agent owns exactly one project instruction surface; a surface
 serves its declared owner and is never a wrapper, shortcut, or authority
 pointer for another agent's surface.
 
-Two actions share one flow:
+Two actions, two scopes:
 
 - **Add or update:** put a reusable rule in a shared user-level source and
-  wire it through each applicable owner's entry file.
-- **Converge:** remove a project-local copy only when that *same owner*
-  demonstrably receives it from a shared source.
+  wire it through each applicable owner's `entry_file` load route. Scope is
+  the `[[agents]]` entries only — do not enumerate `project_globs`.
+- **Converge:** enumerate the project surfaces under `project_globs` and
+  remove a project-local copy only when that *same owner* demonstrably
+  receives it from a shared source.
 
 ## Machine topology comes from config
 
@@ -112,24 +114,27 @@ When another configured agent lists this surface in
 `readonly_project_surfaces`, the same three checks must also pass through
 that reader's own entry load route; a rule covered only for the owner stays.
 
-Record the covering source and load route in the plan. Similar wording in
-another project's surface is promotion evidence, never removal evidence.
+Report every removal in the execution report with its covering source, load
+route, and diff. Similar wording in another project's surface is promotion
+evidence, never removal evidence.
 When coverage is partial or unclear, keep the rule and note it in the
 summary; ask only when the ambiguity changes what you would write.
 
 ## Workflow
 
-1. Read and validate the config; list the surfaces in scope (glob candidates
-   minus configured exclusions; skip non-Git candidates with a stated
-   reason). Note cross-owner references found along the way.
+1. Read and validate the config. For **Add or update**, list only the
+   `[[agents]]` entry files and their load routes. For **Converge**, list the
+   surfaces in scope (glob candidates minus configured exclusions; skip
+   non-Git candidates with a stated reason) and note cross-owner references
+   found along the way.
 2. Classify each candidate rule: shared-covered / project-specific /
    parallel-project / unsure.
-3. 🔴 Present the plan — additions, removals with their coverage proof,
-   isolation fixes. Wait for confirmation before the writes you cannot take
-   back: removing a project-local rule, writing a gitignored instruction file
-   (no version history to fall back on), or touching an `off_limits` surface.
-   Additions to shared sources and isolation fixes in git-tracked surfaces
-   proceed within the current request — report them with their diff.
+3. Execute the plan directly — additions, isolation fixes, and removals of
+   project-local rules all proceed within the current request; report every
+   write with its diff, and every removal with its covering source and load
+   route. 🔴 Confirm first only for the two writes Git cannot restore:
+   writing a gitignored instruction file (no second copy) and touching an
+   `off_limits` surface.
 4. Execute shared sources and entry load routes first, then project-local
    removals, re-checking that the recorded coverage still holds. Edit only
    the declared owner's surface; do not create missing surfaces.

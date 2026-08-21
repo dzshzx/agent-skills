@@ -19,7 +19,7 @@ skill is a directory under `skills/` with a `SKILL.md` plus optional
 
 | Skill | What it does |
 | --- | --- |
-| [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Routes Codex subagent spawns with an explicit model + reasoning-effort decision per child: delegation signals, current model/effort catalogs, a parent-only rule for the top reasoning tiers, an optional managed-identity layer gated on the active configuration, and task-packet/result contracts. Distilled from the retired `codex-subagent-router` project. |
+| [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Routes Codex subagent spawns with an explicit model + reasoning-effort decision per child: delegation signals, the live `spawn_agent` schema as the only model/effort authority, a parent-only rule for the top reasoning tiers, an optional managed-identity layer gated on the active configuration, and task-packet/result contracts. Distilled from the retired `codex-subagent-router` project. |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs independent per-agent project instruction surfaces across a workspace: each configured agent owns one project file; a local rule is converged only when a shared source is proven available through that same owner’s user-level load scope, while cross-owner imports and delegation are rejected. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic. |
 
 `refactor-batch-landing` was removed on 2026-08-06. It orchestrated the Matt

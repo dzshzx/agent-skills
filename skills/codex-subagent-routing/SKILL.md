@@ -26,27 +26,10 @@ Keep in the parent thread:
 
 ## Route options
 
-The active `spawn_agent` tool schema is the authority for model names in the
-current turn. Read its exposed overrides before every spawn and never route to
-a model that the live schema does not offer. The table below records the
-models exposed in the current Codex environment; update it when the runtime
-schema changes.
-
-Models:
-
-| Model | Description |
-|---|---|
-| gpt-5.6-terra | General-purpose model. |
-| gpt-5.6-sol | Highest-capability model. |
-
-Reasoning efforts:
-
-| Effort | Description |
-|---|---|
-| low | Low reasoning depth. |
-| medium | Medium reasoning depth. |
-| high | High reasoning depth. |
-| xhigh | Extra-high reasoning depth. |
+The live `spawn_agent` tool schema is the sole authority for model names and
+reasoning efforts. Read its exposed overrides before every spawn and never
+route to a value the live schema does not offer. Every child gets `model` and
+`reasoning_effort` passed explicitly.
 
 Prohibited child reasoning efforts: max, ultra. The top reasoning tiers stay
 parent-only: a child holding a bounded, pre-scoped brief must not carry the
@@ -54,12 +37,9 @@ maximum reasoning depth its parent used to scope it.
 
 ## Managed identities (optional layer)
 
-Use these agent_type values only when the identities are declared in the
-active configuration (for Codex: `config.toml` `[agents.*]` entries);
-otherwise omit agent_type and route by model and effort alone.
-
-- researcher: Primary-source researcher for external documentation, APIs, specifications, and upstream code.
-- reviewer: Read-only reviewer for one bounded diff axis.
+Pass agent_type only when the active configuration already declares that
+identity (for Codex: a `config.toml` `[agents.*]` entry); otherwise omit it.
+The identity's description lives in config.toml, not here.
 
 ## Spawn contract
 
