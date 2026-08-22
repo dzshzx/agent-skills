@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - skill 描述（frontmatter `description`）同时充当 agent 决定何时调用该 skill 的触发/路由文本——编辑时保持触发短语和范围边界（「不负责 X」）完整。
 - 这些 skill 也以安装拷贝形式存在于 agent runtime 目录（如 `~/.claude/skills/`、`~/.agents/skills/`）——本仓是唯一真源（基线在 initial commit 中从 runtime 目录导入）。在这里编辑一个 skill 后，安装拷贝在重新 install/sync 前即过期；不要直接编辑 runtime 拷贝。
+- **验证只有一道门**：改完正文在真实 harness 跑一次再 push——Codex 用的 skill 跑 `skills/<name>/evals/live-check.sh`（真派子代理、读 rollout 断言，约 2 分钟）；没有 live-check 的 skill 用目标 agent 的非交互模式（`codex exec` / `claude -p`）跑 2–3 条代表性 prompt 看输出。不引入评分表、多轮爬山或 grader 子代理（2026-08-22 实证：纸面评分与真实行为会翻转，流程本身成仪式）。`evals/evals.json` 是参考题库，不是门禁。
 - 提交信息沿用既有模式：`skill(<name>): ...` / `feat(<name>): ...` / `chore: ...`，且 README 的 skill 表应与 `skills/` 下的内容保持同步。
 
 ## Agent skills

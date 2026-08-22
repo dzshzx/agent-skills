@@ -19,7 +19,7 @@ for f in files:
         p=o.get('payload',{})
         if o.get('type')=='session_meta': meta=p
         if o.get('type')=='turn_context': tm={'model':p.get('model'),'effort':p.get('effort')}
-        if 'spawn_agent' in line and o.get('type')=='response_item':
+        if 'spawn_agent' in line:
             args=p.get('arguments')
             if isinstance(args,str):
                 try: args=json.loads(args)
