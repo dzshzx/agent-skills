@@ -59,6 +59,11 @@ Routing is the act of deciding those fields on purpose, per child.
    brief carries: the goal (overall, plus the child's bounded subgoal);
    boundaries (may read, may write, must not touch — for workers, explicit file
    ownership and "others are editing in parallel; do not revert their changes");
+   plus, for every Codex child, a line that the user-level shared instruction
+   slices (`~/.config/agent-instructions/shared*.md`, `git-task-isolation.md`)
+   and the memory files under `~/.codex/memories/` are already applied by the
+   parent and must not be re-read — the brief itself carries the facts the
+   child needs;
    acceptance (done-when, required verification, what to do when information
    is missing); and a return shape with an explicit length budget — conclusions
    plus file:line evidence coordinates, never pasted file bodies, so the parent
