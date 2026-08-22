@@ -38,15 +38,19 @@ maximum reasoning depth its parent used to scope it.
 ## Managed identities (optional layer)
 
 Pass agent_type only when the active configuration already declares that
-identity (for Codex: a `config.toml` `[agents.*]` entry); otherwise omit it.
-The identity's description lives in config.toml, not here.
+identity (for Codex: a `config.toml` `[agents.*]` entry) **and** its declared
+description fits the child's job; otherwise omit it. A declared identity is
+not a free default: `researcher` carries a primary-source research brief, so
+a link audit, a code enumeration, or a test run gets no agent_type even
+though `researcher` exists. The identity's description lives in config.toml,
+not here.
 
 ## Spawn contract
 
 - Choose every routed child explicitly with model and reasoning_effort.
 - Choose `model` only from the active `spawn_agent` schema; do not infer an
   unavailable lightweight tier from product-family naming.
-- Set agent_type when a suitable declared role exists; omit it otherwise.
+- Set agent_type only when a declared role fits the child's job; omit it otherwise.
 - On MultiAgent V2, also set task_name (lowercase letters, digits, and underscores only) and fork_turns="none" for independent work or a positive integer string for limited recent context; do not use full-history all with explicit routing.
 - On stable MultiAgent V1, leave fork_context false or omitted; do not spawn full-history forks with explicit routing.
 - Do not omit routed fields or silently rewrite them.

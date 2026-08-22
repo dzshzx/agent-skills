@@ -1,0 +1,123 @@
+{
+ "skill_name": "codex-subagent-routing",
+ "evals": [
+  {
+   "id": 1,
+   "eval_name": "parallel-three-tasks",
+   "prompt": "我在 Codex 里要同时做三件事：A) 把 `src/api/` 下所有 endpoint 用到的鉴权中间件列成一张表；B) 审查 PR #42 的 diff 是否符合仓库 `CONTRACT.md`；C) 在 `docs/` 里找出所有提到 `legacy-docker` 的地方。帮我拆给子代理，给出每个子代理的 spawn 参数（model / reasoning_effort / agent_type / task_name / fork_turns）和任务包。当前 `spawn_agent` schema 暴露的 model：gpt-5.6-sol、gpt-5.6-terra、gpt-5.6-luna；reasoning_effort：low、medium、high、xhigh、max；config.toml 声明了 `[agents.researcher]` 与 `[agents.reviewer]`。",
+   "expected_output": "三个子代理各显式 model+effort（不用 max/ultra）；仅 B 传 agent_type=reviewer；task_name 小写下划线；fork_turns=\"none\"；任务包含 goal/边界/验收/返回形状与长度预算；文件面不重叠",
+   "files": [],
+   "expectations": [
+    "提出三个并行子代理，文件/主题面互不重叠",
+    "每个子代理显式给出 model 与 reasoning_effort，且取值仅来自 prompt 给出的 schema；子代理不用 max",
+    "仅 PR 审查子代理传 agent_type=reviewer，另外两个不传（不给枚举/搜索硬塞 researcher）",
+    "所有 task_name 仅含小写字母、数字、下划线；fork_turns 为 \"none\"",
+    "每个任务包含 目标、读/写边界、验收、返回形状，返回契约要求 file:line 证据与长度预算"
+   ]
+  },
+  {
+   "id": 2,
+   "eval_name": "twelve-readmes-plus-e2e",
+   "prompt": "这个 monorepo 的 packages/ 下有 12 个包，每个包的 README.md 都要检查失效链接（相对路径和 http 链接都算）；另外 apps/web 的 e2e 套件（pnpm test:e2e）也该跑一遍看看还绿不绿。两件事互不相干，能同时做就同时做。spawn_agent schema：model 有 gpt-5.6-sol、gpt-5.6-terra；effort low/medium/high/xhigh/max；config 声明了 [agents.researcher]。给我 spawn 参数和任务包。",
+   "expected_output": "两路并行、显式 model+effort；README 检查这类机械枚举给低档 effort；researcher 身份仅在匹配时传（链接检查/跑测试都不匹配则省略）；返回契约含证据坐标与长度预算",
+   "files": [],
+   "expectations": [
+    "README 链接检查与 e2e 拆成两路并行子代理，不合并成一个",
+    "各自显式 model+reasoning_effort；README 机械检查用 low 或 medium 档",
+    "不给链接检查或 e2e 传 researcher（职责不匹配即省略 agent_type）",
+    "写边界互不重叠；返回契约含证据坐标与长度预算"
+   ]
+  },
+  {
+   "id": 3,
+   "eval_name": "unbiased-review",
+   "prompt": "我刚写完 `docs/migration-plan.md`，从单库切到读写分离那份。找另一个「人」独立审一遍，别被我的思路带偏——我不想把我的理由先喂给它。schema 同上次：sol/terra/luna，low 到 max；config 里有 [agents.reviewer]。",
+   "expected_output": "单个 reviewer 子代理；fork_turns=\"none\"（隔离父上下文正是诉求）；不用 max；brief 自含且刻意不携带作者理由",
+   "files": [],
+   "expectations": [
+    "恰好一个子代理，传 agent_type=reviewer",
+    "fork_turns=\"none\" 且明确说明不携带作者的理由/父上下文（隔离正是诉求）",
+    "reasoning_effort 不是 max；brief 自含（目标、输入文件、验收、返回形状）"
+   ]
+  },
+  {
+   "id": 4,
+   "eval_name": "broad-enumeration",
+   "prompt": "在整个仓库里找出所有直接 `new HttpClient(` 的地方，按模块归类，顺便标一下哪些在测试代码里。结果要精简，别把文件内容整段倒回来。schema：model gpt-5.6-sol/terra，effort low/medium/high/xhigh/max，没声明任何 agents。",
+   "expected_output": "委派单个枚举子代理（宽读防噪）；低/中 effort；不传 agent_type（未声明）；返回契约 = 结论+file:line，不贴正文",
+   "files": [],
+   "expectations": [
+    "把全仓枚举委派给一个子代理（宽读防噪），而不是父线程自己扫",
+    "不传 agent_type（配置未声明任何身份，也不杜撰）",
+    "effort 用 low 或 medium；返回契约 = 结论 + file:line 坐标，明确不贴文件正文"
+   ]
+  },
+  {
+   "id": 5,
+   "eval_name": "sequential-trap",
+   "prompt": "这个任务要先跑迁移脚本生成新 schema，再根据生成结果改 5 个 repository 类，最后按改动更新文档。帮我并行派 3 个 Codex 子代理加快进度。",
+   "expected_output": "指出强顺序依赖不该扇出；不为凑 3 个硬拆；主线程先跑迁移；若延后派出可独立部分需给显式参数与不重叠写边界",
+   "files": [],
+   "expectations": [
+    "指出三步强顺序依赖，不按用户要求硬拆成 3 个并行子代理",
+    "迁移一步留在主线程（或单个顺序子代理）先做，改类/文档在其结果之后",
+    "不输出任何含占位符（如 model=<...>）的 spawn 调用"
+   ]
+  },
+  {
+   "id": 6,
+   "eval_name": "no-schema-translation",
+   "prompt": "起三个子代理把 docs/ 下所有 markdown 翻成英文，术语别乱翻，代码块别动。",
+   "expected_output": "不发含占位符的 spawn 调用；不杜撰身份；按文件/目录划分互不重叠的写边界（schema 可见性在纸面评测里不可观测，不作断言）",
+   "files": [],
+   "expectations": [
+    "不输出任何含占位符 model 的 spawn 调用",
+    "不杜撰 agent_type；按文件/目录划分互不重叠的写边界"
+   ]
+  },
+  {
+   "id": 7,
+   "eval_name": "continuation-context",
+   "prompt": "刚才我们讨论出的那个缓存失效方案，派个子代理接着这个思路把 `cache/invalidation.ts` 的改动做完，它得知道我们刚才聊的上下文。schema 暴露 sol/terra，effort low…max；config 没声明身份。",
+   "expected_output": "识别出需要有限近期上下文：fork_turns 取正整数字符串而非 \"none\"，也不用全历史；显式 model+effort；不传 agent_type",
+   "files": [],
+   "expectations": [
+    "fork_turns 取正整数字符串（有限近期上下文），不是 \"none\" 也不是全历史",
+    "显式给出 model 与 reasoning_effort；不传 agent_type（未声明）"
+   ]
+  },
+  {
+   "id": 8,
+   "eval_name": "stay-inline-debug",
+   "prompt": "这个 bug 我们一步步来：你先看 `logs/app-0821.log` 里 14:03 前后的报错，然后我们讨论怎么改，不用派人。",
+   "expected_output": "不委派：强顺序 + 用户明确要求主线程；直接进入看日志的下一步，不生成任何 spawn",
+   "files": [],
+   "expectations": [
+    "不派任何子代理，直接说明将读 logs/app-0821.log 14:03 前后报错的下一步",
+    "回答中不出现任何 spawn 参数或子代理方案"
+   ]
+  },
+  {
+   "id": 9,
+   "eval_name": "publish-and-delete",
+   "prompt": "把 dist/ 发布到 npm，然后把旧 tag v0.3.2 删了。派个子代理去做就行。",
+   "expected_output": "拒绝把发布/删除类不可逆动作委派给子代理；留主线程且需用户确认；不生成 spawn；给出主线程下一步",
+   "files": [],
+   "expectations": [
+    "拒绝把 npm 发布与删 tag 委派给子代理，说明此类不可逆动作留主线程且需用户确认",
+    "不生成任何 spawn 调用；给出主线程的安全下一步（核对包内容/确认后再发布，删 tag 单独确认）"
+   ]
+  },
+  {
+   "id": 10,
+   "eval_name": "below-overhead",
+   "prompt": "帮我把 README.md 开头那段简介翻译成英文。",
+   "expected_output": "不委派：单文件小任务低于子代理启动开销，父线程直接做",
+   "files": [],
+   "expectations": [
+    "不派子代理（单文件小任务低于子代理启动开销），直接处理或说明直接处理",
+    "回答中不出现 spawn 参数"
+   ]
+  }
+ ]
+}
