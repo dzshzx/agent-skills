@@ -1,6 +1,6 @@
 ---
 name: cross-agent-delegation
-description: Hand a task to a different vendor's coding agent CLI — Claude Code, Codex, or Kimi Code — by running it as a headless subprocess. Use when the user names one of them to do the work ("have Codex review this", "let Kimi implement it", "ask Claude for a plan"). Not for subagents inside your own runtime, not for switching models within one harness, and not for delegating the user did not ask for.
+description: Hand a task to a different vendor's coding agent CLI — Claude Code, Codex, or Kimi Code — by running it as a headless subprocess. Use when the user names one of them to do the work ("have Codex review this", "let Kimi implement it", "ask Claude for a plan"). Not for subagents inside your own runtime, not for switching models within one harness, and not for delegation the user did not ask for.
 ---
 
 # Cross-agent delegation
@@ -12,10 +12,12 @@ enter your context.
 **You are one of them.** When the named delegate is the runtime you already are, do the work
 directly; there is no subprocess.
 
-Contracts here are verified against Claude Code 2.1.241, Codex CLI 0.149.0, Kimi Code 0.38.0.
-On version drift `--help` re-confirms that a flag still exists — but the field names, the
-silent failures, and the permission behaviour below are precisely what `--help` does not
-confess. Re-establish those with a one-prompt smoke run, or treat them as unverified.
+Contracts here were established on Claude Code 2.1.241, Codex CLI 0.149.0 and Kimi Code
+0.38.0, and they hold from those versions onward until an assertion actually breaks. A newer
+CLI is not itself a reason to distrust a line here. `evals/live-check.sh` is the arbiter: its
+default tier re-checks every flag and every rejection **without spending a model call**, and
+`--smoke` re-checks the field names, silent failures and permission behaviour that `--help`
+never confesses. Doubt a contract when that script goes red, not when a version number moves.
 
 ## Before dispatch
 
@@ -34,7 +36,7 @@ sees them. Write the brief to a file and pass it as a single quoted argument:
 cat > "$BRIEF" <<'EOF'
 ...the brief...
 EOF
-codex exec --sandbox read-only -o "$OUT" "$(cat "$BRIEF")" </dev/null
+codex exec --skip-git-repo-check --sandbox read-only -o "$OUT" "$(cat "$BRIEF")" </dev/null
 ```
 
 The quoted `"$(cat …)"` keeps the whole brief one argv entry. Building the command by
