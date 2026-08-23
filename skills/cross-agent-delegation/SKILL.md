@@ -20,6 +20,24 @@ On version drift, confirm a flag with `--help` before trusting the line that nam
 Run `command -v claude codex kimi`. A spawned shell may not carry your PATH, and only some of
 these are installed on any given machine. A missing binary is a stop, not a workaround.
 
+**Set the working directory explicitly.** All three resolve the project, the repository, and
+their trust and permission scope from cwd, and none of them takes it from the prompt text. The
+delegate inherits your cwd, environment, and filesystem visibility — and nothing else.
+
+**Never interpolate the prompt into the command string.** A brief carries newlines, quotes,
+backticks and `$(...)`, all of which the shell will execute or mangle before the delegate ever
+sees them. Write the brief to a file and pass it as a single quoted argument:
+
+```bash
+cat > "$BRIEF" <<'EOF'
+...the brief...
+EOF
+codex exec --sandbox read-only -o "$OUT" "$(cat "$BRIEF")" </dev/null
+```
+
+The quoted `"$(cat …)"` keeps the whole brief one argv entry. Building the command by
+concatenating prompt text into it is how a delegation silently runs something else.
+
 ## Invocation contracts
 
 Each block is the minimal correct form plus the failures that cost a retry.
@@ -58,7 +76,8 @@ codex exec --skip-git-repo-check --sandbox <mode> --json -o <file> "<prompt>" </
   event.
 - Review is a first-class subcommand: `codex review --uncommitted`, `--base <branch>`, or
   `--commit <sha>`. It prints prose and has **no `--json` or `-o`**; when the review result
-  must be machine-readable, run `codex exec review` instead and read its event stream.
+  must be machine-readable, run `codex exec review --json` (or `-o <file>`) instead — the
+  event stream is not free, the flag is what produces it.
 
 ### Kimi Code
 
@@ -71,8 +90,10 @@ kimi -p "<prompt>" --output-format stream-json --auto </dev/null
 - **Continue with `-S <session_id>`.** Kimi's own output prints a hint reading
   `kimi -r <id>`; `-r` is not a flag. It is accepted silently, ignored, and you get a fresh
   session that remembers nothing — a wrong answer with no error.
-- `--auto` is full autonomy. `-y/--yolo` auto-approves ordinary tool calls but still stops to
-  ask questions, which strands an unattended subprocess.
+- **Headless Kimi has no read-only mode.** `-p` executes tool calls with no approval gate even
+  without `--auto`, and `--plan` is rejected outright (`Cannot combine --prompt with --plan`).
+  `--auto` additionally suppresses the questions that would strand an unattended run, so pass
+  it — but pass it knowing the run can write either way.
 
 ## Permission by role
 
@@ -82,13 +103,15 @@ kimi -p "<prompt>" --output-format stream-json --auto </dev/null
 | executor | write, scoped to the task's directory | the only role that should change files |
 | reviewer | read-only | a reviewer that can edit repairs what it finds instead of reporting it, and the independent judgment you delegated for is gone |
 
-Codex expresses this as `--sandbox read-only` or `workspace-write`, Claude as
-`--permission-mode`, Kimi as `--auto` for the executor and its absence elsewhere.
+Only two of the three can be held read-only: Codex through `--sandbox read-only`, Claude
+through `--permission-mode dontAsk`. **Give the read-only roles to one of those two.** A Kimi
+dispatch is an executor dispatch whatever the brief says, so pointing it at a planning or
+review task buys a reviewer that can rewrite the code it is judging.
 
 ## The brief
 
-The subprocess inherits nothing — not the conversation, not the files you have read, not the
-decisions already made. Everything it needs travels in the prompt:
+The delegate carries none of your context — not the conversation, not the files you have read,
+not the decisions already made. Everything it needs travels in the brief:
 
 - the goal, and the bounded piece this delegate owns
 - the exact file or directory scope it may touch
@@ -108,9 +131,10 @@ call for one; follow those rules rather than inventing isolation here.
 ## Cost shapes the grain
 
 Every delegate reloads its own full instruction layer on each dispatch. That cost is paid per
-invocation, not per token of work, so **delegate coarse**: one dispatch carries a task block
-large enough to dwarf the startup. Small lookups — read this file, explain this function —
-belong to your own runtime's subagents, which already hold the loaded context.
+invocation, not per token of work. So when the split is yours to choose, **delegate coarse**:
+one dispatch carries a task block large enough to dwarf the startup, and small lookups stay
+with your own runtime's subagents, which already hold the loaded context. When the user names
+the delegate and the task, dispatch it as asked — the cost is theirs to spend.
 
 Dispatches run for minutes. Start them as background or long-timeout subprocesses; a default
 command timeout cuts them off mid-task and the work is lost.
