@@ -84,14 +84,20 @@ codex exec --skip-git-repo-check --sandbox <mode> --json -o <file> "<prompt>" </
 ### Kimi Code
 
 ```bash
-kimi -p "<prompt>" --output-format stream-json </dev/null
+kimi -p "<prompt>" --output-format stream-json
 ```
 
-- Answer: the line whose `role` is `assistant`. The default `text` format interleaves the
-  model's reasoning with its answer, so always request `stream-json`.
-- **Continue with `-S <session_id>`.** Kimi's own output prints a hint reading
-  `kimi -r <id>`; `-r` is not a flag. It is accepted silently, ignored, and you get a fresh
-  session that remembers nothing — a wrong answer with no error.
+- **Answer: the last `role: "assistant"` line carrying a `content` string.** A multi-step run
+  emits one such line per step — the earlier ones are progress narration, and steps that call
+  tools emit `assistant` lines carrying `tool_calls` instead. Concatenating them all hands you
+  the delegate's thinking-out-loud along with its answer. The default `text` format interleaves
+  the same material, so always request `stream-json`.
+- **Continue with `-S <session_id>`**, taking the id from the closing
+  `{"role":"meta","type":"session.resume_hint","session_id":…}` line. That same line prints a
+  hint reading `kimi -r <id>`; `-r` is not a flag. It is accepted silently, ignored, and you
+  get a fresh session that remembers nothing — a wrong answer with no error.
+- Failure is the exit code. A rejected launch writes its reason to stderr and emits **no stdout
+  events at all**, so a consumer reading only stdout sees an empty stream rather than an error.
 - **`-p` takes no permission flag at all.** `--auto`, `-y`, `--yolo` and `--plan` each abort
   the run with `Cannot combine --prompt with <flag>`. Headless is pinned to the `auto` posture
   and executes tool calls — writes included — with no approval gate. Adding one of those flags
@@ -117,12 +123,22 @@ kimi -p "<prompt>" --output-format stream-json </dev/null
 | executor | write, scoped to the task's directory | the only role that should change files |
 | reviewer | read-only | a reviewer that can edit repairs what it finds instead of reporting it, and the independent judgment you delegated for is gone |
 
-All three can be held read-only, each by a different mechanism: Codex through
-`--sandbox read-only`, Claude through `--permission-mode dontAsk`, Kimi through an
-`--agent-file` whose `tools:` whitelist omits the writing tools. Kimi's is the one you must
-supply as a file — **a Kimi dispatch with no agent file is an executor dispatch whatever the
-brief says**, so a review task sent that way buys a reviewer that can rewrite the code it is
-judging. Asking for read-only behaviour in the prompt is a request, not a constraint.
+Asking for read-only behaviour in the brief is a request, not a constraint. All three can be
+constrained, but by different mechanisms and to different strengths:
+
+- **Codex — `--sandbox read-only`.** Enforced by the sandbox, so writes fail no matter which
+  command attempts them, and the delegate can still run things to check its own claims.
+- **Claude — `--permission-mode dontAsk`.** Everything outside the allow-rules and the
+  read-only command set is denied, so read-only commands still run.
+- **Kimi — `--agent-file` with a `tools:` whitelist.** The whitelist matches tool names, so
+  dropping `Write` and `Edit` to stop writes also means dropping `Bash`, and command execution
+  goes with it. `[[permission.rules]]` does match `Bash(<pattern>)`, but a denylist over shell
+  commands is not a boundary — `tee`, `sed -i` and `python -c` all walk through it.
+
+**A reviewer that must run something to check a claim goes to Codex or Claude.** Kimi's
+read-only shape is a document reviewer: it reads, greps and judges, and hands back the claims
+it could not verify. And a Kimi dispatch with no agent file is an executor dispatch whatever
+the brief says.
 
 ## The brief
 
