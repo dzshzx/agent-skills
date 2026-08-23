@@ -130,15 +130,22 @@ constrained, but by different mechanisms and to different strengths:
   command attempts them, and the delegate can still run things to check its own claims.
 - **Claude — `--permission-mode dontAsk`.** Everything outside the allow-rules and the
   read-only command set is denied, so read-only commands still run.
-- **Kimi — `--agent-file` with a `tools:` whitelist.** The whitelist matches tool names, so
-  dropping `Write` and `Edit` to stop writes also means dropping `Bash`, and command execution
-  goes with it. `[[permission.rules]]` does match `Bash(<pattern>)`, but a denylist over shell
-  commands is not a boundary — `tee`, `sed -i` and `python -c` all walk through it.
+- **Kimi — `--agent-file` with a `tools:` whitelist**, which matches tool names, so the
+  strength you get depends on which two you can live without:
+  - `tools: [Read, Grep, Glob]` — mechanically read-only, and no commands at all.
+  - `tools: [Read, Grep, Glob, Bash]` — commands run, `Write` and `Edit` are genuinely gone,
+    and shell-borne writes rest on the brief saying not to. This is the vendor's own recipe:
+    the built-in `explore` agent ships exactly this set and calls it "prompt-enforced
+    read-only behavior". `[[permission.rules]]` matches `Bash(<pattern>)`, but a denylist over
+    shell commands is not a boundary — `tee`, `sed -i` and `python -c` walk through it.
 
-**A reviewer that must run something to check a claim goes to Codex or Claude.** Kimi's
-read-only shape is a document reviewer: it reads, greps and judges, and hands back the claims
-it could not verify. And a Kimi dispatch with no agent file is an executor dispatch whatever
-the brief says.
+  Kimi decides read-only at tool-name granularity and does not judge whether a given command
+  writes; `--plan` gates edits mechanically but cannot be combined with `-p`.
+
+**A reviewer whose verdict must not depend on the delegate's goodwill goes to Codex or
+Claude** — only they enforce read-only while still running commands. Pick Kimi's second shape
+when the review needs a shell and honour-system writes are acceptable, its first when they are
+not. And a Kimi dispatch with no agent file is an executor dispatch whatever the brief says.
 
 ## The brief
 
