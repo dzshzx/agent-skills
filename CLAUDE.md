@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 这个仓库是什么
 
-一组遵循 [Agent Skills](https://agentskills.io) 开放标准的可复用 agent skill，可经 `npx skills add dzshzx/agent-skills` 跨 AI 编码 agent（Claude Code、Codex、Cursor……）安装。每个 skill 是 `skills/<name>/` 下的一个目录，含一个 `SKILL.md`（YAML frontmatter：`name` + `description`），外加可选的 `references/`、`scripts/`、`tests/` 和 `agents/`（per-agent 接口元数据，如 `agents/openai.yaml`）。
+一组遵循 [Agent Skills](https://agentskills.io) 开放标准的可复用 agent skill，可经 `npx skills add dzshzx/agent-skills` 跨 AI 编码 agent（Claude Code、Codex、Cursor……）安装。每个 skill 是 `skills/<name>/` 下的一个目录，含一个 `SKILL.md`（YAML frontmatter：`name` + `description`），外加可选的 `references/`、`scripts/`、`evals/`（`live-check.sh` 与 `evals.json`，供 Codex skill 用）和 `agents/`（per-agent 接口元数据，如 `agents/openai.yaml`）。
 
 这里的 skill 是 **prompt-instructions-as-product**：SKILL.md 正文即交付物，对它的编辑就是对每个安装它的 agent 的行为改动。
 

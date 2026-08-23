@@ -8,7 +8,7 @@
 - 已提交的 `SKILL.md` 不放机器专属事实。机器拓扑应留在 per-machine config，或以
   相对 skill 目录的方式解析；平台事实可以，机器事实不行。
 - 采用小而完整的 patch，并让 README 的 skill 表与 `skills/` 目录保持同步。
-- 修改后检查目标 diff，并在真实 harness 验证一次再提交：Codex 用的 skill 跑
+- 修改后检查目标 diff，并在真实 harness 验证一次再 push：Codex 用的 skill 跑
   `skills/<name>/evals/live-check.sh`（真派子代理、读 rollout 断言）；无 live-check 的
   用目标 agent 非交互模式跑 2–3 条代表性 prompt。不引入评分表、多轮爬山或 grader
   子代理；`evals/evals.json` 只是参考题库。提交信息沿用

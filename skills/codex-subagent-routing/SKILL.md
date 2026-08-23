@@ -40,10 +40,9 @@ efforts, and roles; it changes between Codex versions).
 5. **Self-contained brief**: goal (overall plus the child's bounded subgoal);
    boundaries (may read, may write, must not touch — workers get explicit file
    ownership and "others are editing in parallel; do not revert their work");
-   a line that the user-level shared instruction slices
-   (`~/.config/agent-instructions/shared*.md`, `git-task-isolation.md`) and
-   `~/.codex/memories/` are already applied by the parent and must not be
-   re-read — the brief carries the facts the child needs;
+   a line that the user-level shared instruction slices and the agent's memory
+   files are already applied by the parent and must not be re-read by the
+   child — the brief carries the facts the child needs;
    acceptance (done-when, verification, what to do when information is
    missing); return shape with a length budget — conclusions plus file:line
    coordinates, never pasted file bodies. Parallel children get disjoint files,

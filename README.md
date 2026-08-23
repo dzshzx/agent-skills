@@ -13,7 +13,8 @@ it silently drops the flag and installs every skill in the repository.
 
 Skills follow the [Agent Skills](https://agentskills.io) open standard: each
 skill is a directory under `skills/` with a `SKILL.md` plus optional
-`references/`, `scripts/`, and `tests/`.
+`references/`, `scripts/`, and `evals/` (`live-check.sh` and `evals.json` for
+Codex skills).
 
 ## Skills
 
@@ -22,10 +23,11 @@ skill is a directory under `skills/` with a `SKILL.md` plus optional
 | [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Routes Codex subagent spawns with an explicit model + reasoning-effort decision per child: delegation signals, the live `spawn_agent` schema as the only model/effort authority, a parent-only rule for the top reasoning tiers, an optional managed-identity layer gated on the active configuration, and task-packet/result contracts. Distilled from the retired `codex-subagent-router` project. |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs independent per-agent project instruction surfaces across a workspace: each configured agent owns one project file; a local rule is converged only when a shared source is proven available through that same owner’s user-level load scope, while cross-owner imports and delegation are rejected. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic. |
 
-`refactor-batch-landing` was removed on 2026-08-06. It orchestrated the Matt
-Pocock skills family (`codebase-design`, `implement`, `tdd`, `code-review`,
-`to-spec`, `to-tickets`, `grill-with-docs`) and had no execution surface once
-that family was uninstalled. Recover it from git history if the family returns.
+`refactor-batch-landing` was removed on 2026-08-06. It only orchestrated the
+Matt Pocock skills family (`codebase-design`, `implement`, `tdd`,
+`code-review`, `to-spec`, `to-tickets`, `grill-with-docs`), which is installed
+separately via the skills CLI and is not part of this repo; the orchestrator
+had no execution surface of its own. Recover it from git history if needed.
 
 ## Design rules
 
@@ -57,9 +59,12 @@ Then push the candidate, wait for CI on its exact SHA, and tag that commit:
 ```bash
 git push origin master
 # Wait for CI on this exact master SHA to pass.
-git tag -a v0.1.2 -m "Release v0.1.2"
-git push origin v0.1.2
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
 ```
+
+`v0.1.1` (2026-07-25) predates the annotated-tag rule and is a lightweight
+tag; it is left as-is and never repaired.
 
 ## License
 

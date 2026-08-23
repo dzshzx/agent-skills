@@ -9,6 +9,14 @@ codex exec -C "$REPO" -s read-only --skip-git-repo-check -o "$OUT" "$PROMPT" >/d
 python3 - "$MARK" <<'PY'
 import json,os,sys,glob,re
 mark=float(sys.argv[1]); ok=True
+# Built-in roles are always valid; configured identities come from the
+# [agents.<name>] tables in the live ~/.codex/config.toml, if present.
+roles={'explorer','worker','default'}
+cfg=os.path.expanduser('~/.codex/config.toml')
+if os.path.exists(cfg):
+    import tomllib
+    with open(cfg,'rb') as fh: data=tomllib.load(fh)
+    roles |= set(data.get('agents',{}).keys())
 files=[f for f in glob.glob(os.path.expanduser('~/.codex/sessions/**/*.jsonl'),recursive=True) if os.path.getmtime(f)>=mark-5]
 spawns=[]; children={}
 for f in files:
@@ -35,7 +43,7 @@ for s in spawns:
     if e in ('max','ultra'): bad.append('顶档')
     if ft in (None,'all'): bad.append('fork_turns=all/缺失')
     if not re.fullmatch(r'[a-z0-9_]+',tn or ''): bad.append('task_name 不合规')
-    if r and r not in ('explorer','worker','default','researcher','reviewer'): bad.append(f'未知角色 {r}')
+    if r and r not in roles: bad.append(f'未知角色 {r}')
     if 'service_tier' in s: bad.append('主动传了 service_tier')
     print(f"{tn:28s} {str(m):14s} {str(e):7s} {str(r):10s} {ft}  {'OK' if not bad else 'FAIL: '+'; '.join(bad)}")
     ok = ok and not bad
