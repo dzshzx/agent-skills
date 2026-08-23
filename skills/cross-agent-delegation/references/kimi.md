@@ -1,7 +1,7 @@
 # Kimi Code — headless contract
 
 ```bash
-timeout 1800 kimi -p "$(cat "$BRIEF")" --output-format stream-json
+kimi -p "$(cat "$BRIEF")" --output-format stream-json
 ```
 
 - **Answer: the last `role: "assistant"` line carrying a `content` string.** A multi-step run
@@ -13,10 +13,11 @@ timeout 1800 kimi -p "$(cat "$BRIEF")" --output-format stream-json
   `{"role":"meta","type":"session.resume_hint","session_id":…}` line. That line also prints
   `kimi -r <id>`; `-r` is absent from `--help` but resumes the same session (both forms recall
   earlier turns). A resumed session cannot take `--agent-file`.
-- `-p` reads the prompt from argv; no `</dev/null` needed. A command line that does not enter
-  prompt mode — `kimi -r <id>` without `-p`, a mistyped flag — opens the interactive TUI and
-  waits for a keypress, the trust prompt first in a cwd Kimi has not seen. The `timeout` turns
-  that hang into a failure.
+- `-p` reads the prompt from argv; no `</dev/null` needed. A mistyped flag is rejected at parse
+  time (exit 1). A command line with no `-p` at all — `kimi -r <id>` alone — opens the
+  interactive TUI and waits for a keypress, the trust prompt first in a cwd Kimi has not seen; a
+  closed stdin does not release it. Only the `timeout` around the dispatch turns that hang into a
+  failure.
 - Failure is the exit code. A rejected launch writes its reason to stderr, and stdout holds at
   most the `system.version` meta line — a consumer reading only stdout sees an empty stream
   rather than an error.

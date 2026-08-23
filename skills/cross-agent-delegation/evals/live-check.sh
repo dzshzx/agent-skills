@@ -4,12 +4,14 @@
 #   默认档（surface + parser）：--help 是否仍列出所用 flag；参数解析层的拒绝是否仍成立。
 #     零模型调用且 fail-closed：会真启动的命令都跑在无凭证的 CODEX_HOME / 不存在的 Kimi 模型下，
 #     契约一旦失效（原本该被拒的命令被接受）会在 401 / 模型解析处失败，而不是悄悄花一次调用。
-#   --smoke：真跑约 13 次小调用，解析 JSON 并断言字段、退出码、续跑与权限行为。
+#   --smoke：真跑约 13 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
+#     字段、退出码、续跑与权限行为。FAIL 行下附 stderr 尾巴，用来区分「行为断言失败」与「调用本身失败
+#     （401 / 限流 / 网络）」——后者不是契约失效。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
 set -u
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
-no(){ FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
+no(){ FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; [ -s "${E:-}" ] && printf '       stderr: %s\n' "$(tail -c 200 "$E" | tr '\n' ' ')"; }
 has(){ printf '%s' "$2" | grep -qF -- "$1"; }
 T=300                                   # 单次真跑上限（秒）
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
@@ -90,30 +92,36 @@ done
   && ok "-r <id> 被当作 session id 解析（不存在即报错，非静默忽略）" || no "-r 的解析行为已变（rc=$rc）：$(head -c 120 "$W/e")"
 
 if [ "${1:-}" = "--smoke" ]; then
+  E="$W/stderr"                           # 每次真跑的 stderr；no() 失败时附其尾巴
+  CM="--model sonnet"   # 默认模型 Fable 5 的 API 安全层会间歇性整轮拒绝这类探针式 prompt（api_error）；契约测的是 CLI，不是模型
   echo "== smoke：Claude（真跑）"
   S="$W/a"; mkdir -p "$S"   # 目录名不用 claude：实测 cwd basename 为 claude 时会被 API 安全层误拦
-  ( cd "$S" && timeout "$T" claude -p "Reply with exactly: OK" --output-format json --permission-mode acceptEdits </dev/null >"$S/1.json" 2>/dev/null ); rc=$?
-  [ "$rc" -eq 0 ] && py "$S/1.json" 'd["is_error"] is False and "OK" in d["result"] and d["session_id"] and isinstance(d["permission_denials"], list)' \
+  # jerr <json>：失败归因——Claude 的错误进 JSON 而非 stderr，打印 terminal_reason 与 result 头
+  jerr(){ python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("terminal_reason"),"|",str(d.get("result"))[:160])' "$1" 2>&1 | head -c 200; }
+  ( cd "$S" && timeout "$T" claude -p "Remember this word and nothing else: pineapple. Reply with exactly: noted" --output-format json --permission-mode acceptEdits $CM </dev/null >"$S/1.json" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && py "$S/1.json" 'd["is_error"] is False and "noted" in d["result"] and d["session_id"] and isinstance(d["permission_denials"], list)' \
     && ok "成功运行：rc=0，.is_error=false，.result/.session_id/.permission_denials 在位" \
-    || no "成功运行的 JSON 形状已变（rc=$rc）：$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("terminal_reason"),"|",str(d.get("result"))[:160])' "$S/1.json" 2>&1 | head -c 200)"
+    || no "成功运行的 JSON 形状已变（rc=$rc）：$(jerr "$S/1.json")"
   SID=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["session_id"])' "$S/1.json" 2>/dev/null)
-  ( cd "$S" && timeout "$T" claude -p --resume "$SID" "Reply with exactly: OK2" --output-format json </dev/null >"$S/2.json" 2>/dev/null ); rc=$?
-  [ "$rc" -eq 0 ] && py "$S/2.json" 'd["is_error"] is False' \
-    && ok "--resume 续跑成功" || no "--resume 续跑失败（rc=$rc）"
-  ( cd "$S" && timeout "$T" claude -p "Reply with exactly: OK" --model "$BOGUS" --output-format json </dev/null >"$S/3.json" 2>/dev/null ); rc=$?
+  ( cd "$S" && timeout "$T" claude -p --resume "$SID" "What word did I ask you to remember? Reply with only that word." --output-format json $CM </dev/null >"$S/2.json" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && py "$S/2.json" 'd["is_error"] is False and "pineapple" in d["result"]' \
+    && ok "--resume 续跑成功且能回忆上一轮" || no "--resume 续跑失败或失忆（rc=$rc）：$(jerr "$S/2.json")"
+  ( cd "$S" && timeout "$T" claude -p "Reply with exactly: OK" --model "$BOGUS" --output-format json </dev/null >"$S/3.json" 2>"$E" ); rc=$?
   [ "$rc" -ne 0 ] && py "$S/3.json" 'd["is_error"] is True and d["subtype"] == "success" and d.get("terminal_reason")' \
     && ok "失败运行：rc≠0，.is_error=true，.terminal_reason 在位，而 .subtype 仍是 success" || no "失败运行的 JSON 形状已变（rc=$rc）"
   F="$S/deny.txt"
-  ( cd "$S" && timeout "$T" claude -p "Use the Write tool to create $F containing hi." --permission-mode dontAsk --output-format json </dev/null >"$S/4.json" 2>/dev/null )
-  [ ! -f "$F" ] && py "$S/4.json" 'len(d["permission_denials"]) > 0 and d["permission_denials"][0].get("tool_name")' \
-    && ok "dontAsk：Write 被拒且记入 .permission_denials（本机 allow 规则未放行 Write）" || no "dontAsk 下 Write 未被拒或未记录"
+  ( cd "$S" && timeout "$T" claude -p "Use the Write tool to create $F containing hi." --permission-mode dontAsk --output-format json $CM </dev/null >"$S/4.json" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && [ ! -f "$F" ] && py "$S/4.json" 'd["is_error"] is False and len(d["permission_denials"]) > 0 and d["permission_denials"][0].get("tool_name")' \
+    && ok "dontAsk：运行成功，Write 被拒且记入 .permission_denials（本机 allow 规则未放行 Write）" || no "dontAsk 断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)）"
   F="$S/notool.txt"
-  ( cd "$S" && timeout "$T" claude -p "Use the Write tool to create $F containing hi. If you cannot, reply: NO-WRITE" --tools Read,Grep,Glob --output-format json </dev/null >"$S/5.json" 2>/dev/null )
-  [ ! -f "$F" ] && ok "--tools Read,Grep,Glob：Write 工具不存在，文件未产生" || no "--tools 白名单没能剥离 Write"
+  # 只看「文件不存在」会把启动失败也算作绿：要求 rc=0、JSON 非错误，且模型自报 NO-WRITE 作为它确实尝试过的证据
+  ( cd "$S" && timeout "$T" claude -p "Use the Write tool to create $F containing hi. If you cannot, reply with exactly: NO-WRITE" --tools Read,Grep,Glob --output-format json $CM </dev/null >"$S/5.json" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && [ ! -f "$F" ] && py "$S/5.json" 'd["is_error"] is False and "NO-WRITE" in d["result"]' \
+    && ok "--tools Read,Grep,Glob：运行成功，Write 工具不存在，文件未产生，模型自报 NO-WRITE" || no "--tools 白名单断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)）"
 
   echo "== smoke：Codex（真跑）"
   C="$W/b"; mkdir -p "$C"
-  ( cd "$C" && timeout "$T" codex exec --skip-git-repo-check --sandbox read-only --json -o "$C/1.txt" "Reply with exactly: OK" </dev/null >"$C/1.jsonl" 2>/dev/null ); rc=$?
+  ( cd "$C" && timeout "$T" codex exec --skip-git-repo-check --sandbox read-only --json -o "$C/1.txt" "Reply with exactly: OK" </dev/null >"$C/1.jsonl" 2>"$E" ); rc=$?
   # codex_parse <jsonl>：两行输出——thread.started.thread_id、item.completed/agent_message 的 text
   codex_parse(){ python3 - "$1" <<'PY'
 import json,sys
@@ -129,13 +137,13 @@ PY
   { read -r TID; read -r MSG; } < <(codex_parse "$C/1.jsonl")
   [ "$rc" -eq 0 ] && [ -n "$TID" ] && [ "$MSG" = "$(cat "$C/1.txt")" ] && has OK "$MSG" \
     && ok "--json：thread.started.thread_id 与 item.completed/agent_message.text 在位，-o 内容等于该 text" || no "--json/-o 的输出契约已变（rc=$rc）"
-  ( cd "$C" && timeout "$T" codex exec resume --skip-git-repo-check --json -o "$C/2.txt" "$TID" "Reply with exactly: OK2" </dev/null >"$C/2.jsonl" 2>/dev/null ); rc=$?
+  ( cd "$C" && timeout "$T" codex exec resume --skip-git-repo-check --json -o "$C/2.txt" "$TID" "Reply with exactly: OK2" </dev/null >"$C/2.jsonl" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && has '"agent_message"' "$(cat "$C/2.jsonl")" && [ -s "$C/2.txt" ] \
     && ok "exec resume <thread_id> 续跑成功，-o 每次都要重新给" || no "exec resume 续跑失败（rc=$rc）"
   R="$W/repo"; mkdir -p "$R"; ( cd "$R" && git init -q -b master && printf 'a\n' > f.txt && git add f.txt && git -c user.name=lc -c user.email=lc@x commit -qm init && printf 'b\n' >> f.txt )
-  ( cd "$R" && timeout "$T" codex exec --sandbox read-only review --uncommitted --json -o "$R/3.txt" </dev/null >"$R/3.jsonl" 2>/dev/null ); rc=$?
+  ( cd "$R" && timeout "$T" codex exec --sandbox read-only review --uncommitted --json -o "$R/3.txt" </dev/null >"$R/3.jsonl" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && [ -s "$R/3.txt" ] && ok "exec --sandbox read-only review --uncommitted --json -o 可跑" || no "review --uncommitted 形式失败（rc=$rc）"
-  ( cd "$R" && timeout "$T" codex exec --sandbox read-only review --json -o "$R/4.txt" "Review the working tree change to f.txt in one sentence." </dev/null >"$R/4.jsonl" 2>/dev/null ); rc=$?
+  ( cd "$R" && timeout "$T" codex exec --sandbox read-only review --json -o "$R/4.txt" "Review the working tree change to f.txt in one sentence." </dev/null >"$R/4.jsonl" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && [ -s "$R/4.txt" ] && ok "exec --sandbox read-only review --json -o <prompt> 可跑" || no "review 自定义 prompt 形式失败（rc=$rc）"
 
   echo "== smoke：Kimi（真跑）"
@@ -151,20 +159,22 @@ for line in open(sys.argv[1]):
 print(sid or ""); print(ans or "")
 PY
   }
-  ( cd "$K" && timeout "$T" kimi -p "Remember this word and nothing else: pineapple. Reply with exactly: noted" --output-format stream-json >"$K/1.jsonl" 2>/dev/null ); rc=$?
+  ( cd "$K" && timeout "$T" kimi -p "Remember this word and nothing else: pineapple. Reply with exactly: noted" --output-format stream-json >"$K/1.jsonl" 2>"$E" ); rc=$?
   { read -r KSID; read -r ANS; } < <(last "$K/1.jsonl")
   [ "$rc" -eq 0 ] && [ -n "$KSID" ] && has noted "$ANS" \
     && ok "stream-json：最后一条带 content 的 assistant 行是答案，session.resume_hint 带 session_id" || no "stream-json 输出形状已变（rc=$rc）"
-  ( cd "$K" && timeout "$T" kimi -p "What word did I ask you to remember? Reply with only that word." -S "$KSID" --output-format stream-json >"$K/2.jsonl" 2>/dev/null ); rc=$?
+  ( cd "$K" && timeout "$T" kimi -p "What word did I ask you to remember? Reply with only that word." -S "$KSID" --output-format stream-json >"$K/2.jsonl" 2>"$E" ); rc=$?
   { read -r _; read -r ANS; } < <(last "$K/2.jsonl")
   [ "$rc" -eq 0 ] && has pineapple "$ANS" && ok "-S <id> 续跑能回忆上一轮" || no "-S 续跑失败或失忆（rc=$rc：$ANS）"
-  ( cd "$K" && timeout "$T" kimi -p "What word did I ask you to remember? Reply with only that word." -r "$KSID" --output-format stream-json >"$K/3.jsonl" 2>/dev/null ); rc=$?
+  ( cd "$K" && timeout "$T" kimi -p "What word did I ask you to remember? Reply with only that word." -r "$KSID" --output-format stream-json >"$K/3.jsonl" 2>"$E" ); rc=$?
   { read -r _; read -r ANS; } < <(last "$K/3.jsonl")
   [ "$rc" -eq 0 ] && has pineapple "$ANS" && ok "-r <id>（resume_hint 打印的形式）同样续跑成功" || no "-r 续跑失败或失忆（rc=$rc：$ANS）——契约说它与 -S 等价"
   A="$K/ro.md"; printf -- '---\ndescription: Read-only\ntools: [Read, Grep, Glob]\n---\nReport what you find; you are not changing files.\n' > "$A"
   F="$K/w.txt"
-  ( cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi。" --agent-file "$A" --output-format stream-json >"$K/4.jsonl" 2>/dev/null ); rc=$?
-  [ ! -f "$F" ] && ok "tools 白名单确实剥离了写工具（rc=$rc）" || no "tools 白名单没能剥离写工具"
+  ( cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi。做不到就只回复：NO-WRITE" --agent-file "$A" --output-format stream-json >"$K/4.jsonl" 2>"$E" ); rc=$?
+  { read -r _; read -r ANS; } < <(last "$K/4.jsonl")
+  [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has NO-WRITE "$ANS" \
+    && ok "tools 白名单：运行成功，写工具不存在，文件未产生，模型自报 NO-WRITE" || no "tools 白名单断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，答复：${ANS:0:80}）"
 fi
 
 echo "== $PASS ok / $FAIL fail"
