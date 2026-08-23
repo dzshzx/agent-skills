@@ -125,6 +125,14 @@ kimi -p "<prompt>" --output-format stream-json
 | executor | write, scoped to the task's directory | the only role that should change files |
 | reviewer | read-only | a reviewer that can edit repairs what it finds instead of reporting it, and the independent judgment you delegated for is gone |
 
+How much the mechanism matters is itself role-dependent, and the roles are not close. An
+executor needs no constraint at all — Kimi's headless posture *is* an executor, and it is the
+only one of the three that arrives that way instead of having to be granted it. For a planner,
+read-only just keeps the delegate from jumping ahead into implementation, and every shape below
+does that much. Only the reviewer's worth actually rests on enforcement: a reviewer that edits
+repairs the finding instead of reporting it, so you never learn it found anything. **That is
+the one role where the differences below decide which delegate you pick.**
+
 Asking for read-only behaviour in the brief is a request, not a constraint. All three can be
 constrained, but by different mechanisms and to different strengths:
 
