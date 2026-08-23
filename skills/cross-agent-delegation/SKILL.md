@@ -84,7 +84,7 @@ codex exec --skip-git-repo-check --sandbox <mode> --json -o <file> "<prompt>" </
 ### Kimi Code
 
 ```bash
-kimi -p "<prompt>" --output-format stream-json --auto </dev/null
+kimi -p "<prompt>" --output-format stream-json </dev/null
 ```
 
 - Answer: the line whose `role` is `assistant`. The default `text` format interleaves the
@@ -92,10 +92,22 @@ kimi -p "<prompt>" --output-format stream-json --auto </dev/null
 - **Continue with `-S <session_id>`.** Kimi's own output prints a hint reading
   `kimi -r <id>`; `-r` is not a flag. It is accepted silently, ignored, and you get a fresh
   session that remembers nothing — a wrong answer with no error.
-- **Headless Kimi has no read-only mode.** `-p` executes tool calls with no approval gate even
-  without `--auto`, and `--plan` is rejected outright (`Cannot combine --prompt with --plan`).
-  `--auto` additionally suppresses the questions that would strand an unattended run, so pass
-  it — but pass it knowing the run can write either way.
+- **`-p` takes no permission flag at all.** `--auto`, `-y`, `--yolo` and `--plan` each abort
+  the run with `Cannot combine --prompt with <flag>`. Headless is pinned to the `auto` posture
+  and executes tool calls — writes included — with no approval gate. Adding one of those flags
+  to make a run safe does not restrict it; it prevents it.
+- **Read-only comes from the tool set instead.** `--agent-file <file.md>` selects an agent
+  definition whose frontmatter `tools:` list is a whitelist, and the excluded tools are really
+  gone: pressed to write under a persona that wanted to comply, such a run enumerates only the
+  tools it was given and reports that it has no write capability. This composes with `-p`.
+
+  ```markdown
+  ---
+  description: Read-only reviewer
+  tools: [Read, Grep, Glob]
+  ---
+  Report what you find; you are not changing files.
+  ```
 
 ## Permission by role
 
@@ -105,10 +117,12 @@ kimi -p "<prompt>" --output-format stream-json --auto </dev/null
 | executor | write, scoped to the task's directory | the only role that should change files |
 | reviewer | read-only | a reviewer that can edit repairs what it finds instead of reporting it, and the independent judgment you delegated for is gone |
 
-Only two of the three can be held read-only: Codex through `--sandbox read-only`, Claude
-through `--permission-mode dontAsk`. **Give the read-only roles to one of those two.** A Kimi
-dispatch is an executor dispatch whatever the brief says, so pointing it at a planning or
-review task buys a reviewer that can rewrite the code it is judging.
+All three can be held read-only, each by a different mechanism: Codex through
+`--sandbox read-only`, Claude through `--permission-mode dontAsk`, Kimi through an
+`--agent-file` whose `tools:` whitelist omits the writing tools. Kimi's is the one you must
+supply as a file — **a Kimi dispatch with no agent file is an executor dispatch whatever the
+brief says**, so a review task sent that way buys a reviewer that can rewrite the code it is
+judging. Asking for read-only behaviour in the prompt is a request, not a constraint.
 
 ## The brief
 

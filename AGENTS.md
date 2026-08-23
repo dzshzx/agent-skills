@@ -10,7 +10,8 @@
 - 采用小而完整的 patch，并让 README 的 skill 表与 `skills/` 目录保持同步。
 - 修改后检查目标 diff，并在真实 harness 验证一次再 push：Codex 用的 skill 跑
   `skills/<name>/evals/live-check.sh`（真派子代理、读 rollout 断言）；无 live-check 的
-  用目标 agent 非交互模式跑 2–3 条代表性 prompt。不引入评分表、多轮爬山或 grader
+  用目标 agent 非交互模式跑 2–3 条代表性 prompt。**SKILL.md 里出现的每条命令行都要被真正
+  执行过一次，不能只让 agent 复述它打算跑什么**——复述能通过的无效 flag 会一路穿过验证。不引入评分表、多轮爬山或 grader
   子代理；`evals/evals.json` 只是参考题库。提交信息沿用
   `skill(<name>): …`、`feat(<name>): …` 或 `chore: …`。
 - Release 候选先合入 `master`，等待该同一 SHA 的 CI 通过，再创建匹配的带
