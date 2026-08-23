@@ -4,7 +4,7 @@
 #   默认档（surface + parser）：--help 是否仍列出所用 flag；参数解析层的拒绝是否仍成立。
 #     零模型调用且 fail-closed：会真启动的命令都跑在无凭证的 CODEX_HOME / 不存在的 Kimi 模型下，
 #     契约一旦失效（原本该被拒的命令被接受）会在 401 / 模型解析处失败，而不是悄悄花一次调用。
-#   --smoke：真跑约 13 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
+#   --smoke：真跑约 17 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
 #     字段、退出码、续跑与权限行为。FAIL 行下附 stderr 尾巴，用来区分「行为断言失败」与「调用本身失败
 #     （401 / 限流 / 网络）」——后者不是契约失效。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
@@ -78,14 +78,16 @@ H=$(kimi --help 2>&1)
 for f in "-S, --session" "--agent-file" "--output-format" "-p, --prompt"; do
   has "$f" "$H" && ok "kimi --help 有 $f" || no "kimi --help 缺 $f"
 done
-printf '%s' "$H" | grep -A2 -- '--agent-file' | grep -q 'Cannot be combined with --session' \
-  && ok "--agent-file 仍不能与 --session 组合" || no "--agent-file 与 --session 的互斥说明已变"
+AFD="$W/ro-agent.md"; printf -- '---\ndescription: Read-only\ntools: [Read]\n---\nprobe\n' > "$AFD"
+( cd "$NONGIT" && timeout 60 kimi -p noop --agent-file "$AFD" -S session_bogus -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
+[ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" \
+  && ok "--agent-file 与 -S 的组合仍被拒（真跑解析层，rc=$rc）" || no "--agent-file 与 -S 的互斥已失效（rc=$rc）：$(head -c 120 "$W/e")"
 
 echo "== Kimi：解析层拒绝（模型别名不存在，fail-closed）"
 for f in --auto -y --yolo --plan; do
   ( cd "$NONGIT" && timeout 60 kimi -p noop "$f" -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
-  [ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" && [ ! -s "$W/o" ] \
-    && ok "kimi -p 仍拒绝 $f，原因在 stderr、stdout 为空（rc=$rc）" || no "kimi -p 对 $f 的拒绝行为已变（rc=$rc）"
+  [ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" && ! grep -q '"role":"assistant"' "$W/o" \
+    && ok "kimi -p 仍拒绝 $f，原因在 stderr、stdout 无答案行（rc=$rc）" || no "kimi -p 对 $f 的拒绝行为已变（rc=$rc）"
 done
 ( cd "$NONGIT" && timeout 60 kimi -p noop -r session_does-not-exist -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
 [ "$rc" -ne 0 ] && has "not found" "$(cat "$W/e")" \
@@ -140,11 +142,20 @@ PY
   ( cd "$C" && timeout "$T" codex exec resume --skip-git-repo-check --json -o "$C/2.txt" "$TID" "Reply with exactly: OK2" </dev/null >"$C/2.jsonl" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && has '"agent_message"' "$(cat "$C/2.jsonl")" && [ -s "$C/2.txt" ] \
     && ok "exec resume <thread_id> 续跑成功，-o 每次都要重新给" || no "exec resume 续跑失败（rc=$rc）"
+  ( cd "$C" && timeout "$T" codex exec resume --skip-git-repo-check "$TID" "Reply with exactly: OK3" </dev/null >"$C/2b.txt" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && [ -s "$C/2b.txt" ] && [ "$(head -c 1 "$C/2b.txt")" != "{" ] \
+    && ok "resume 不带 --json/-o 时输出纯文本（两 flag 确为 per-invocation）" || no "resume 无 flag 的输出形态已变（rc=$rc）"
   R="$W/repo"; mkdir -p "$R"; ( cd "$R" && git init -q -b master && printf 'a\n' > f.txt && git add f.txt && git -c user.name=lc -c user.email=lc@x commit -qm init && printf 'b\n' >> f.txt )
   ( cd "$R" && timeout "$T" codex exec --sandbox read-only review --uncommitted --json -o "$R/3.txt" </dev/null >"$R/3.jsonl" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && [ -s "$R/3.txt" ] && ok "exec --sandbox read-only review --uncommitted --json -o 可跑" || no "review --uncommitted 形式失败（rc=$rc）"
   ( cd "$R" && timeout "$T" codex exec --sandbox read-only review --json -o "$R/4.txt" "Review the working tree change to f.txt in one sentence." </dev/null >"$R/4.jsonl" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && [ -s "$R/4.txt" ] && ok "exec --sandbox read-only review --json -o <prompt> 可跑" || no "review 自定义 prompt 形式失败（rc=$rc）"
+  P="$W/perm"; mkdir -p "$P"
+  ( cd "$P" && timeout "$T" codex exec --skip-git-repo-check --sandbox read-only --json "Create the file $P/ro.txt containing hi, then confirm in one sentence." </dev/null >"$P/ro.jsonl" 2>"$E" ); rc=$?
+  [ ! -f "$P/ro.txt" ] && has '"agent_message"' "$(cat "$P/ro.jsonl")" \
+    && ok "read-only：写被 OS sandbox 拦下，运行正常收尾（rc=$rc）" || no "read-only 下产生了文件或运行异常（rc=$rc）"
+  ( cd "$P" && timeout "$T" codex exec --skip-git-repo-check --sandbox workspace-write --json "Create the file $P/rw.txt containing hi, then confirm in one sentence." </dev/null >"$P/rw.jsonl" 2>"$E" ); rc=$?
+  [ -f "$P/rw.txt" ] && ok "workspace-write：写被放行（rc=$rc）" || no "workspace-write 下写未生效（rc=$rc）"
 
   echo "== smoke：Kimi（真跑）"
   K="$W/c"; mkdir -p "$K"
@@ -175,6 +186,25 @@ PY
   { read -r _; read -r ANS; } < <(last "$K/4.jsonl")
   [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has NO-WRITE "$ANS" \
     && ok "tools 白名单：运行成功，写工具不存在，文件未产生，模型自报 NO-WRITE" || no "tools 白名单断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，答复：${ANS:0:80}）"
+  A2="$K/rw.md"; printf -- '---\ndescription: Read-only with shell\ntools: [Read, Grep, Glob, Bash]\n---\nReport what you find; you are not changing files.\n' > "$A2"
+  F="$K/w2.txt"
+  # 自报走 shell：没有 Write 时模型只能用 Bash echo 出 NO-WRITE-TOOL，落在 tool 结果流里——grep jsonl 断言，不看散文
+  ( cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi——只用 Write 工具，不要用 Bash 写文件。如果你的工具集没有 Write 工具，就用 Bash 运行 echo NO-WRITE-TOOL 代替。" --agent-file "$A2" --output-format stream-json >"$K/5.jsonl" 2>"$E" ); rc=$?
+  # called <jsonl>：单行输出本 run 调用过的工具名——shell 恢复看 tool_calls 证据，不只信模型自报
+  CALLED=$(python3 - "$K/5.jsonl" <<'PY'
+import json,sys
+names=set()
+for line in open(sys.argv[1]):
+    try: e=json.loads(line)
+    except Exception: continue
+    for tc in (e.get("tool_calls") or []):
+        n=(tc.get("function") or {}).get("name") or tc.get("name")
+        if n: names.add(n)
+print(" ".join(sorted(names)))
+PY
+  )
+  [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/5.jsonl" \
+    && ok "放宽白名单 [Read,Grep,Glob,Bash]：Bash 在（回显 NO-WRITE-TOOL），Write 缺席（调用面：$CALLED）" || no "放宽白名单断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
 fi
 
 echo "== $PASS ok / $FAIL fail"

@@ -27,15 +27,16 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
 - **Read-only comes from the tool set.** `--agent-file <file.md>` selects an agent definition
   whose frontmatter `tools:` list is a whitelist, and the excluded tools are really gone:
   pressed to write under a persona that wanted to comply, such a run enumerates only the tools
-  it was given and reports no write capability. `[Read, Grep, Glob]` has no shell;
-  `[Read, Grep, Glob, Bash]` restores it with `Write` and `Edit` still gone — the vendor's
-  built-in `explore` agent ships exactly that set. `[[permission.rules]]` can deny
+  it was given and reports no write capability. The practical read-only set is
+  `[Read, Grep, Glob, Bash]` — the vendor's built-in `explore` agent ships exactly it:
+  the shell returns, `Write` and `Edit` stay gone, and shell-borne writes ride on the
+  brief. Drop `Bash` for a hard no-shell boundary. `[[permission.rules]]` can deny
   `Bash(<pattern>)`, but a denylist over shell commands is not a boundary.
 
 ```markdown
 ---
 description: Read-only
-tools: [Read, Grep, Glob]
+tools: [Read, Grep, Glob, Bash]
 ---
 Report what you find; you are not changing files.
 ```

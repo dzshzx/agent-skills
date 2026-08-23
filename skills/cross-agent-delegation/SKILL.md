@@ -74,8 +74,9 @@ instruction rather than re-routing to another CLI.
   tight as that policy and no tighter. The Bash sandbox (`sandbox.filesystem.denyWrite`) is a
   further settings-level layer.
 - **Kimi `--agent-file` with a `tools:` whitelist** — excluded tools are really gone, matched by
-  name. `[Read, Grep, Glob]` has no shell; adding `Bash` returns the shell and leaves shell-borne
-  writes on the brief (the vendor's own `explore` recipe). Cannot combine with `-S`/`--continue`.
+  name. The practical read-only set is `[Read, Grep, Glob, Bash]` (the vendor's own `explore`
+  recipe): the shell returns, `Write`/`Edit` stay gone, shell-borne writes ride on the brief.
+  Drop `Bash` for a hard no-shell boundary. Cannot combine with `-S`/`--continue`.
 
 ## The brief
 
