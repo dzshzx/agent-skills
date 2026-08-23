@@ -13,7 +13,9 @@ enter your context.
 directly; there is no subprocess.
 
 Contracts here are verified against Claude Code 2.1.241, Codex CLI 0.149.0, Kimi Code 0.38.0.
-On version drift, confirm a flag with `--help` before trusting the line that names it.
+On version drift `--help` re-confirms that a flag still exists — but the field names, the
+silent failures, and the permission behaviour below are precisely what `--help` does not
+confess. Re-establish those with a one-prompt smoke run, or treat them as unverified.
 
 ## Before dispatch
 
