@@ -111,30 +111,25 @@ kimi -p "<prompt>" --output-format stream-json
 
   ```markdown
   ---
-  description: Read-only reviewer
+  description: Read-only
   tools: [Read, Grep, Glob]
   ---
   Report what you find; you are not changing files.
   ```
 
-## Permission by role
+## What the dispatch may touch
 
-| Role | Permission | Why |
-| --- | --- | --- |
-| planner | read-only | its product is text; write access buys nothing |
-| executor | write, scoped to the task's directory | the only role that should change files |
-| reviewer | read-only | a reviewer that can edit repairs what it finds instead of reporting it, and the independent judgment you delegated for is gone |
+Decide this per dispatch, from what this piece of work needs. Two questions settle it.
 
-How much the mechanism matters is itself role-dependent, and the roles are not close. An
-executor needs no constraint at all — Kimi's headless posture *is* an executor, and it is the
-only one of the three that arrives that way instead of having to be granted it. For a planner,
-read-only just keeps the delegate from jumping ahead into implementation, and every shape below
-does that much. Only the reviewer's worth actually rests on enforcement: a reviewer that edits
-repairs the finding instead of reporting it, so you never learn it found anything. **That is
-the one role where the differences below decide which delegate you pick.**
+**Does it need to change files?** If yes, grant writes and point them at the directory the work
+belongs in. If no, take them away — a delegate that can write eventually will, and asking it not
+to in the brief is a request, not a constraint.
 
-Asking for read-only behaviour in the brief is a request, not a constraint. All three can be
-constrained, but by different mechanisms and to different strengths:
+**Would you be able to tell if it wrote anyway?** This is the question that decides *which* CLI
+gets the dispatch. When what you want back is a judgement — is this right, what is wrong here,
+what should we do — an unenforced restriction leaves you unable to separate "found nothing" from
+"found something and quietly fixed it". That is when the restriction has to be enforced rather
+than requested:
 
 - **Codex — `--sandbox read-only`.** Enforced by the sandbox, so writes fail no matter which
   command attempts them, and the delegate can still run things to check its own claims.
@@ -152,10 +147,9 @@ constrained, but by different mechanisms and to different strengths:
   Kimi decides read-only at tool-name granularity and does not judge whether a given command
   writes; `--plan` gates edits mechanically but cannot be combined with `-p`.
 
-**A reviewer whose verdict must not depend on the delegate's goodwill goes to Codex or
-Claude** — only they enforce read-only while still running commands. Pick Kimi's second shape
-when the review needs a shell and honour-system writes are acceptable, its first when they are
-not. And a Kimi dispatch with no agent file is an executor dispatch whatever the brief says.
+When the dispatch is supposed to change things, none of the above applies — send it plainly.
+Kimi arrives in that posture already, which is the same fact seen from the other side: a Kimi
+dispatch with no agent file will change files whatever the brief says.
 
 ## The brief
 
@@ -168,11 +162,12 @@ not the decisions already made. Everything it needs travels in the brief:
 - the return format and a length budget
 - that it performs the task itself rather than delegating onward
 
-## Handoff and recovery
+## Handing results onward
 
-Write each stage's product to a file before the next stage starts. That file is at once the
-next stage's input and the restart point, so a failed stage re-runs alone instead of the whole
-chain. When a stage should continue rather than restart, resume it by id.
+When one dispatch's result feeds another, put it in a file rather than carrying it through your
+own context. That file is at once the next dispatch's input and the point you restart from, so a
+failure re-runs one dispatch instead of everything before it. When a dispatch should continue
+rather than start over, resume it by id.
 
 Delegations that write files belong in an isolated worktree whenever the host project's rules
 call for one; follow those rules rather than inventing isolation here.
