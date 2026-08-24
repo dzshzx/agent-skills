@@ -132,15 +132,18 @@ summary; ask only when the ambiguity changes what you would write.
 3. Execute the plan directly — additions, isolation fixes, and removals of
    project-local rules all proceed within the current request; report every
    write with its diff, and every removal with its covering source and load
-   route. 🔴 Confirm first only for the two writes Git cannot restore:
-   writing a gitignored instruction file (no second copy) and touching an
-   `off_limits` surface.
+   route. 🔴 Confirm first only for the one write Git cannot restore:
+   writing a gitignored instruction file (no second copy). `off_limits`
+   paths are never written, confirmed or not (see Boundaries).
 4. Execute shared sources and entry load routes first, then project-local
    removals, re-checking that the recorded coverage still holds. Edit only
    the declared owner's surface; do not create missing surfaces.
 5. Validate: `git status --short` and `git diff -- <surface>` per repo;
-   commit with `git commit --only -- <surface>`; leave unrelated dirty paths
-   untouched; confirm no cross-owner reference was introduced.
+   commit a tracked surface with `git commit --only -- <surface>` (it rejects
+   untracked paths). A surface that exists untracked and not ignored is
+   reported as such and left unstaged — ask before adding it to version
+   control; a gitignored surface follows Boundaries. Leave unrelated dirty
+   paths untouched; confirm no cross-owner reference was introduced.
 
 ## Boundaries
 
