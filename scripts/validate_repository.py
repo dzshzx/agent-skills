@@ -65,6 +65,11 @@ def validate() -> list[str]:
         if not skill_file.is_file():
             errors.append(f"{skill_dir.relative_to(ROOT)}: missing SKILL.md")
             continue
+        if not (skill_dir / "evals" / "live-check.sh").is_file():
+            errors.append(
+                f"{skill_dir.relative_to(ROOT)}: missing evals/live-check.sh "
+                "(every skill ships a real-harness check; scripts/verify.sh runs it)"
+            )
 
         try:
             fields = frontmatter(skill_file)

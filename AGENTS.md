@@ -8,12 +8,13 @@
 - 已提交的 `SKILL.md` 不放机器专属事实。机器拓扑应留在 per-machine config，或以
   相对 skill 目录的方式解析；平台事实可以，机器事实不行。
 - 采用小而完整的 patch，并让 README 的 skill 表与 `skills/` 目录保持同步。
-- 修改后检查目标 diff，并在真实 harness 验证一次再 push：Codex 用的 skill 跑
-  `skills/<name>/evals/live-check.sh`（真派子代理、读 rollout 断言）；无 live-check 的
-  用目标 agent 非交互模式跑 2–3 条代表性 prompt。**SKILL.md 里出现的每条命令行都要被真正
-  执行过一次，不能只让 agent 复述它打算跑什么**——复述能通过的无效 flag 会一路穿过验证。不引入评分表、多轮爬山或 grader
-  子代理；`evals/evals.json` 只是参考题库。提交信息沿用
-  `skill(<name>): …`、`feat(<name>): …` 或 `chore: …`。
+- 修改后检查目标 diff，push 前跑 `scripts/verify.sh`：先机械门（与 CI 同一组），再对
+  相对 `origin/master` 有改动的 skill 跑各自的 `skills/<name>/evals/live-check.sh`（真调用、
+  计费、需本机 CLI 与凭证，只在本地跑；`--all` 全跑）。每个 skill 必须有 live-check
+  （`validate_repository.py` 强制），断言写在脚本头部，绿只证明断言的行为。**SKILL.md 里出现的
+  每条命令行都要被真正执行过一次，不能只让 agent 复述它打算跑什么**——复述能通过的无效 flag
+  会一路穿过验证。不引入评分表、多轮爬山或 grader 子代理；`evals/evals.json` 只是参考题库。
+  提交信息沿用 `skill(<name>): …`、`feat(<name>): …` 或 `chore: …`。
 - Release 候选先合入 `master`，等待该同一 SHA 的 CI 通过，再创建匹配的带
   注解 `vX.Y.Z` tag，保证 `npx skills add dzshzx/agent-skills` 的安装可复现。
   远端发布 tag 不移动、不复用；失败修复使用下一个 patch 版本。

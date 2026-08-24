@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 这个仓库是什么
 
-一组遵循 [Agent Skills](https://agentskills.io) 开放标准的可复用 agent skill，可经 `npx skills add dzshzx/agent-skills` 跨 AI 编码 agent（Claude Code、Codex、Cursor……）安装。每个 skill 是 `skills/<name>/` 下的一个目录，含一个 `SKILL.md`（YAML frontmatter：`name` + `description`），外加可选的 `references/`、`scripts/`、`evals/`（`live-check.sh` 与 `evals.json`，供 Codex skill 用）和 `agents/`（per-agent 接口元数据，如 `agents/openai.yaml`）。
+一组遵循 [Agent Skills](https://agentskills.io) 开放标准的可复用 agent skill，可经 `npx skills add dzshzx/agent-skills` 跨 AI 编码 agent（Claude Code、Codex、Cursor……）安装。每个 skill 是 `skills/<name>/` 下的一个目录，含一个 `SKILL.md`（YAML frontmatter：`name` + `description`），外加可选的 `references/`、`scripts/`、`evals/`（每个 skill 必备的 `live-check.sh` 真跑门；`evals.json` 是 Codex 用的参考题库）和 `agents/`（per-agent 接口元数据，如 `agents/openai.yaml`）。
 
 这里的 skill 是 **prompt-instructions-as-product**：SKILL.md 正文即交付物，对它的编辑就是对每个安装它的 agent 的行为改动。
 
@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - skill 描述（frontmatter `description`）同时充当 agent 决定何时调用该 skill 的触发/路由文本——编辑时保持触发短语和范围边界（「不负责 X」）完整。
 - 这些 skill 也以安装拷贝形式存在于 agent runtime 目录（如 `~/.claude/skills/`、`~/.agents/skills/`）——本仓是唯一真源（基线在 initial commit 中从 runtime 目录导入）。在这里编辑一个 skill 后，安装拷贝在重新 install/sync 前即过期；不要直接编辑 runtime 拷贝。
-- **验证只有一道门**：改完正文在真实 harness 跑一次再 push——Codex 用的 skill 跑 `skills/<name>/evals/live-check.sh`（真派子代理、读 rollout 断言，约 2 分钟）；没有 live-check 的 skill 用目标 agent 的非交互模式（`codex exec` / `claude -p`）跑 2–3 条代表性 prompt 看输出。不引入评分表、多轮爬山或 grader 子代理（2026-08-22 实证：纸面评分与真实行为会翻转，流程本身成仪式）。`evals/evals.json` 是参考题库，不是门禁。
+- **验证只有一道门，一条命令**：push 前跑 `scripts/verify.sh`——先机械门（与 CI 同一组：`validate_repository.py`、shellcheck、sync fixtures），再对相对 `origin/master` 有改动的 skill 跑各自的 `skills/<name>/evals/live-check.sh`（真调用、计费、需本机 CLI 与凭证，所以只在本地跑；`--all` 全跑，用于查 CLI 版本漂移）。每个 skill 必须有 live-check（`validate_repository.py` 强制），断言写在脚本头部，绿只证明断言的行为。不引入评分表、多轮爬山或 grader 子代理（2026-08-22 实证：纸面评分与真实行为会翻转，流程本身成仪式）。`evals/evals.json` 是参考题库，不是门禁。
 - 提交信息沿用既有模式：`skill(<name>): ...` / `feat(<name>): ...` / `chore: ...`，且 README 的 skill 表应与 `skills/` 下的内容保持同步。
 
 ## Agent skills

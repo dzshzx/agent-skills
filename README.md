@@ -13,8 +13,8 @@ it silently drops the flag and installs every skill in the repository.
 
 Skills follow the [Agent Skills](https://agentskills.io) open standard: each
 skill is a directory under `skills/` with a `SKILL.md` plus optional
-`references/`, `scripts/`, and `evals/` (`live-check.sh` and `evals.json` for
-Codex skills).
+`references/`, `scripts/`, and `evals/` (`live-check.sh`, the real-harness check
+every skill ships, plus `evals.json` reference prompts for Codex skills).
 
 ## Skills
 
@@ -22,7 +22,7 @@ Codex skills).
 | --- | --- |
 | [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Routes Codex subagent spawns with an explicit model + reasoning-effort decision per child: delegation signals, the live `spawn_agent` schema as the only model/effort authority, a parent-only rule for the top reasoning tiers, an optional managed-identity layer gated on the active configuration, and task-packet/result contracts. Distilled from the retired `codex-subagent-router` project. |
 | [`cross-agent-delegation`](skills/cross-agent-delegation/SKILL.md) | Hands a task to a different vendor's coding agent CLI (Claude Code, Codex, Kimi Code) as a headless subprocess, in any direction and for any kind of work the user names: per-CLI invocation contracts in `references/` (answer and resume-id locations, the failures that cost a retry), a permission posture that defaults to normal working permissions with per-CLI mechanical restriction when asked, and the brief and handoff rules a context-free delegate needs. Ships `evals/live-check.sh`: a fail-closed default tier that re-checks flags and parse-level rejections with no model calls, plus `--smoke` for the JSON fields, exit codes, resume and permission behaviour `--help` never confesses. |
-| [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs independent per-agent project instruction surfaces across a workspace: each configured agent owns one project file; a local rule is converged only when a shared source is proven available through that same owner’s user-level load scope, while cross-owner imports and delegation are rejected. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic; `scripts/validate_config.py` checks a config against that schema (unknown keys, duplicate owners, unmatched read-only surfaces, missing files) and `evals/check.sh` pins it with fixtures. |
+| [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Governs independent per-agent project instruction surfaces across a workspace: each configured agent owns one project file; a local rule is converged only when a shared source is proven available through that same owner’s user-level load scope, while cross-owner imports and delegation are rejected. Machine topology comes from a per-machine config file (`references/config-example.toml`), so the skill itself stays generic; `scripts/validate_config.py` checks a config against that schema (unknown keys, duplicate owners, unmatched read-only surfaces, missing files) and `evals/check.sh` pins it with fixtures; `evals/live-check.sh` runs a real Converge in a throwaway workspace and asserts the file-level outcome. |
 
 `refactor-batch-landing` was removed on 2026-08-06. It only orchestrated the
 Matt Pocock skills family (`codebase-design`, `implement`, `tdd`,
@@ -49,17 +49,19 @@ had no execution surface of its own. Recover it from git history if needed.
 
 ## Releases
 
-Before tagging, run the same mechanical checks CI runs:
+Before pushing, run the standard verification:
 
 ```bash
-python scripts/validate_repository.py            # frontmatter, inventory, links, shell/JSON/TOML syntax
-shellcheck -S warning skills/*/evals/*.sh
-bash skills/sync-agents-instructions/evals/check.sh
+scripts/verify.sh          # mechanical gate (what CI runs) + live checks for skills changed vs origin/master
+scripts/verify.sh --all    # live checks for every skill, e.g. after a CLI upgrade
 ```
 
-CI proves only these mechanical invariants. A skill's behaviour is proven before
-pushing, in a real harness (`skills/<name>/evals/live-check.sh` or a headless
-run of the target agent), as described in `CLAUDE.md`.
+The mechanical gate is `python scripts/validate_repository.py`,
+`shellcheck -S warning skills/*/evals/*.sh scripts/*.sh` and
+`bash skills/sync-agents-instructions/evals/check.sh`; CI runs exactly those.
+Live checks (`skills/<name>/evals/live-check.sh`, one per skill, enforced by
+the validator) make real, billed CLI calls and need the CLIs and credentials
+on the machine, so they run locally, never in CI.
 
 Then push the candidate, wait for CI on its exact SHA, and tag that commit:
 
