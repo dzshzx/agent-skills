@@ -1,0 +1,16 @@
+# A typo in a key name must be rejected, not silently ignored.
+[workspace]
+project_glob = ["~/workspace/*"]
+off_limits = []
+
+[[shared_sources]]
+path = "~/.config/agent-instructions/shared.md"
+role = "machine facts"
+domain = "machine-facts"
+load = "always"
+
+[[agents]]
+name = "codex"
+entry_file = "~/.codex/AGENTS.md"
+always_load_mode = "mandatory-entry-read"
+project_instruction_file = "/abs/AGENTS.md"

@@ -1,0 +1,15 @@
+# Missing required field and an out-of-range enum value.
+[workspace]
+project_globs = ["~/workspace/*"]
+off_limits = []
+
+[[shared_sources]]
+path = "~/.config/agent-instructions/shared.md"
+role = "machine facts"
+domain = "machine-facts"
+load = "sometimes"
+
+[[agents]]
+name = "codex"
+entry_file = "~/.codex/AGENTS.md"
+project_instruction_file = "AGENTS.md"

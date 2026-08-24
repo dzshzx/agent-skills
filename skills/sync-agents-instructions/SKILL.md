@@ -48,9 +48,13 @@ infer a topology from directory listings. See
 - `[[repository_exclusions]]` — `glob` + `reason`; the only way to exempt a
   repo candidate. Do not prune heuristically.
 
-Validate the config before acting. On missing files, malformed or missing
-required fields, or two agents/surfaces normalizing to the same owner, stop
-and ask instead of guessing.
+Validate the config before acting: run `python3 scripts/validate_config.py
+<config>` from this skill's directory (`${CLAUDE_SKILL_DIR}` on Claude Code;
+the directory containing this SKILL.md elsewhere). It checks the schema
+above, rejects unknown keys, two agents or surfaces normalizing to the same
+owner, `readonly_project_surfaces` that name no other configured owner, and
+referenced files that do not exist. On any error, stop and ask instead of
+guessing.
 
 ## Isolation invariant
 

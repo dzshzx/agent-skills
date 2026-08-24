@@ -1,0 +1,34 @@
+# Schema-valid config: three agents, one read-only cross-surface declared with a
+# "./" prefix to exercise path normalization. Paths need not exist (--schema-only).
+[workspace]
+project_globs = ["~/workspace/*"]
+off_limits = ["**/docs/agents/**"]
+
+[[shared_sources]]
+path = "~/.config/agent-instructions/shared.md"
+role = "machine facts"
+domain = "machine-facts"
+load = "always"
+
+[[agents]]
+name = "claude-code"
+entry_file = "~/.claude/CLAUDE.md"
+always_load_mode = "native"
+project_instruction_file = "CLAUDE.md"
+
+[[agents]]
+name = "codex"
+entry_file = "~/.codex/AGENTS.md"
+always_load_mode = "mandatory-entry-read"
+project_instruction_file = "AGENTS.md"
+
+[[agents]]
+name = "kimi-code"
+entry_file = "~/.kimi-code/AGENTS.md"
+always_load_mode = "mandatory-entry-read"
+project_instruction_file = ".kimi-code/AGENTS.md"
+readonly_project_surfaces = ["./AGENTS.md"]
+
+[[repository_exclusions]]
+glob = "~/workspace/archived-copy"
+reason = "archived snapshot retained outside the governed estate"
