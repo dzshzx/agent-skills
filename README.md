@@ -49,11 +49,17 @@ had no execution surface of its own. Recover it from git history if needed.
 
 ## Releases
 
-Before tagging, run the same repository validation locally:
+Before tagging, run the same mechanical checks CI runs:
 
 ```bash
-python scripts/validate_repository.py
+python scripts/validate_repository.py            # frontmatter, inventory, links, shell/JSON/TOML syntax
+shellcheck -S warning skills/*/evals/*.sh
+bash skills/sync-agents-instructions/evals/check.sh
 ```
+
+CI proves only these mechanical invariants. A skill's behaviour is proven before
+pushing, in a real harness (`skills/<name>/evals/live-check.sh` or a headless
+run of the target agent), as described in `CLAUDE.md`.
 
 Then push the candidate, wait for CI on its exact SHA, and tag that commit:
 

@@ -28,3 +28,9 @@ jobs:
 
       - name: Validate skill sources and inventory
         run: python scripts/validate_repository.py
+
+      - name: Lint shipped shell scripts
+        run: shellcheck -S warning skills/*/evals/*.sh
+
+      - name: Check the sync-agents-instructions config validator against its fixtures
+        run: bash skills/sync-agents-instructions/evals/check.sh

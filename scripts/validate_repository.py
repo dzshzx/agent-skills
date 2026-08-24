@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Validate the repository invariants required before publishing a skill tag."""
+"""Validate the repository invariants required before publishing a skill tag.
+
+Checks skill frontmatter, README inventory, machine-specific paths, relative
+links, and the syntax of shipped shell / JSON / TOML files. Behavioural
+verification of a skill is not done here: run its evals/live-check.sh or a
+real headless harness before pushing.
+"""
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -96,6 +105,27 @@ def validate() -> list[str]:
     for name in sorted(documented - names):
         errors.append(f"README.md: documents nonexistent skill {name!r}")
 
+    errors.extend(validate_shipped_files())
+    return errors
+
+
+def validate_shipped_files() -> list[str]:
+    """Syntax-check every shell, JSON and TOML file a skill ships."""
+    errors: list[str] = []
+    for script in sorted(SKILLS_DIR.rglob("*.sh")):
+        result = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+        if result.returncode != 0:
+            errors.append(f"{script.relative_to(ROOT)}: bash -n failed: {result.stderr.strip()}")
+    for path in sorted(SKILLS_DIR.rglob("*.json")):
+        try:
+            json.loads(path.read_text(encoding="utf-8"))
+        except ValueError as error:
+            errors.append(f"{path.relative_to(ROOT)}: invalid JSON: {error}")
+    for path in sorted(SKILLS_DIR.rglob("*.toml")):
+        try:
+            tomllib.loads(path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as error:
+            errors.append(f"{path.relative_to(ROOT)}: invalid TOML: {error}")
     return errors
 
 
@@ -107,7 +137,7 @@ def main() -> int:
         return 1
 
     count = sum(1 for path in SKILLS_DIR.iterdir() if path.is_dir())
-    print(f"Validated {count} skills and README inventory.")
+    print(f"Validated {count} skills, README inventory, and shipped shell/JSON/TOML syntax.")
     return 0
 
 
