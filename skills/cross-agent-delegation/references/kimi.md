@@ -12,7 +12,8 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
 - **Continue with `-S <session_id>`**, taking the id from the closing
   `{"role":"meta","type":"session.resume_hint","session_id":…}` line. That line also prints
   `kimi -r <id>`; `-r` is absent from `--help` but resumes the same session (both forms recall
-  earlier turns). A resumed session cannot take `--agent-file`.
+  earlier turns). A resumed session takes no `--agent`/`--agent-file`: the agent bound at
+  creation is restored automatically, so a read-only dispatch resumes read-only.
 - `-p` reads the prompt from argv; no `</dev/null` needed. A mistyped flag is rejected at parse
   time (exit 1). A command line with no `-p` at all — `kimi -r <id>` alone — opens the
   interactive TUI and waits for a keypress, the trust prompt first in a cwd Kimi has not seen; a
@@ -24,19 +25,21 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
 - **`-p` takes no permission flag at all.** `--auto`, `-y`, `--yolo` and `--plan` each abort
   the run with `Cannot combine --prompt with <flag>`. Headless is pinned to the `auto` posture
   and executes tool calls — writes included — with no approval gate.
-- **Read-only comes from the tool set.** `--agent-file <file.md>` selects an agent definition
-  whose frontmatter `tools:` list is a whitelist, and the excluded tools are really gone:
-  pressed to write under a persona that wanted to comply, such a run enumerates only the tools
-  it was given and reports no write capability. The practical read-only set is
-  `[Read, Grep, Glob, Bash]` — the vendor's built-in `explore` agent ships exactly it:
-  the shell returns, `Write` and `Edit` stay gone, and shell-borne writes ride on the
-  brief. Drop `Bash` for a hard no-shell boundary. `[[permission.rules]]` can deny
-  `Bash(<pattern>)`, but a denylist over shell commands is not a boundary.
+- **Read-only comes from the tool set.** `--agent explore` selects the vendor's built-in
+  read-only agent, `tools: [Read, Grep, Glob, Bash]`, with nothing to write beforehand: the
+  shell returns, `Write` and `Edit` stay gone, and shell-borne writes ride on the brief.
+  `--agent-file <file.md>` selects your own definition, whose frontmatter `tools:` list is a
+  whitelist; the excluded tools are really gone — pressed to write under a persona that wanted
+  to comply, such a run enumerates only the tools it was given and reports no write capability.
+  Drop `Bash` there for a hard no-shell boundary. The agent takes its name from the file's
+  basename, which must be kebab-case: `read-only.md` launches, a `mktemp` name is rejected
+  before any model call with `Invalid agent name … expected kebab-case`. `[[permission.rules]]`
+  can deny `Bash(<pattern>)`, but a denylist over shell commands is not a boundary.
 
 ```markdown
 ---
-description: Read-only
-tools: [Read, Grep, Glob, Bash]
+description: Read-only, no shell
+tools: [Read, Grep, Glob]
 ---
 Report what you find; you are not changing files.
 ```

@@ -4,7 +4,7 @@
 #   默认档（surface + parser）：--help 是否仍列出所用 flag；参数解析层的拒绝是否仍成立。
 #     零模型调用且 fail-closed：会真启动的命令都跑在无凭证的 CODEX_HOME / 不存在的 Kimi 模型下，
 #     契约一旦失效（原本该被拒的命令被接受）会在 401 / 模型解析处失败，而不是悄悄花一次调用。
-#   --smoke：真跑约 17 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
+#   --smoke：真跑约 18 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
 #     字段、退出码、续跑与权限行为。FAIL 行下附 stderr 尾巴，用来区分「行为断言失败」与「调用本身失败
 #     （401 / 限流 / 网络）」——后者不是契约失效。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
@@ -75,13 +75,20 @@ CODEX_HOME="$NOAUTH" codex exec review --uncommitted --json "prompt" </dev/null 
 
 echo "== Kimi：flag 面"
 H=$(kimi --help 2>&1)
-for f in "-S, --session" "--agent-file" "--output-format" "-p, --prompt"; do
+for f in "-S, --session" "--agent <name>" "--agent-file" "--output-format" "-p, --prompt"; do
   has "$f" "$H" && ok "kimi --help 有 $f" || no "kimi --help 缺 $f"
 done
 AFD="$W/ro-agent.md"; printf -- '---\ndescription: Read-only\ntools: [Read]\n---\nprobe\n' > "$AFD"
 ( cd "$NONGIT" && timeout 60 kimi -p noop --agent-file "$AFD" -S session_bogus -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
 [ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" \
   && ok "--agent-file 与 -S 的组合仍被拒（真跑解析层，rc=$rc）" || no "--agent-file 与 -S 的互斥已失效（rc=$rc）：$(head -c 120 "$W/e")"
+( cd "$NONGIT" && timeout 60 kimi -p noop --agent explore -S session_bogus -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
+[ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" && has "restored automatically on resume" "$(cat "$W/e")" \
+  && ok "--agent 与 -S 同样互斥，报错仍写明 resume 自动恢复绑定的 agent（rc=$rc）" || no "--agent 与 -S 的互斥或 resume 恢复语义已变（rc=$rc）：$(head -c 120 "$W/e")"
+AFBAD="$W/tmp.notkebab.md"; cp "$AFD" "$AFBAD"   # 契约：agent 名取自文件 basename，须 kebab-case（mktemp 名会被拒）
+( cd "$NONGIT" && timeout 60 kimi -p noop --agent-file "$AFBAD" -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
+[ "$rc" -ne 0 ] && has "expected kebab-case" "$(cat "$W/e")" \
+  && ok "--agent-file 非 kebab-case 文件名在模型调用前被拒（rc=$rc）" || no "--agent-file 的文件名规则已变（rc=$rc）：$(head -c 120 "$W/e")"
 
 echo "== Kimi：解析层拒绝（模型别名不存在，fail-closed）"
 for f in --auto -y --yolo --plan; do
@@ -191,7 +198,7 @@ PY
   # 自报走 shell：没有 Write 时模型只能用 Bash echo 出 NO-WRITE-TOOL，落在 tool 结果流里——grep jsonl 断言，不看散文
   ( cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi——只用 Write 工具，不要用 Bash 写文件。如果你的工具集没有 Write 工具，就用 Bash 运行 echo NO-WRITE-TOOL 代替。" --agent-file "$A2" --output-format stream-json >"$K/5.jsonl" 2>"$E" ); rc=$?
   # called <jsonl>：单行输出本 run 调用过的工具名——shell 恢复看 tool_calls 证据，不只信模型自报
-  CALLED=$(python3 - "$K/5.jsonl" <<'PY'
+  called(){ python3 - "$1" <<'PY'
 import json,sys
 names=set()
 for line in open(sys.argv[1]):
@@ -202,9 +209,16 @@ for line in open(sys.argv[1]):
         if n: names.add(n)
 print(" ".join(sorted(names)))
 PY
-  )
+  }
+  CALLED=$(called "$K/5.jsonl")
   [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/5.jsonl" \
     && ok "放宽白名单 [Read,Grep,Glob,Bash]：Bash 在（回显 NO-WRITE-TOOL），Write 缺席（调用面：$CALLED）" || no "放宽白名单断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
+  F="$K/w3.txt"
+  # 契约：--agent explore 是同一工具面的单 flag 形式——不写 agent 文件，Bash 在、Write 缺席
+  ( cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi——只用 Write 工具，不要用 Bash 写文件。如果你的工具集没有 Write 工具，就用 Bash 运行 echo NO-WRITE-TOOL 代替。" --agent explore --output-format stream-json >"$K/6.jsonl" 2>"$E" ); rc=$?
+  CALLED=$(called "$K/6.jsonl")
+  [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/6.jsonl" \
+    && ok "--agent explore：Bash 在（回显 NO-WRITE-TOOL），Write 缺席，无需 agent 文件（调用面：$CALLED）" || no "--agent explore 的工具面断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
 fi
 
 echo "== $PASS ok / $FAIL fail"

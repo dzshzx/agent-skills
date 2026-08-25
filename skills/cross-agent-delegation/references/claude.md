@@ -14,7 +14,8 @@ claude -p "$(cat "$BRIEF")" --output-format json --permission-mode acceptEdits <
   and runs only `permissions.allow` rules from the cwd's settings scopes, the built-in read-only
   command set and hook-approved calls — what it denies depends on that policy, not on the flag
   alone. `--allowedTools` widens a specific tool or command pattern; `--tools Read,Grep,Glob`
-  restricts the tool set itself, which holds regardless of policy.
+  restricts the tool set itself, which holds regardless of policy. The Bash sandbox
+  (`sandbox.filesystem.denyWrite`) is a further settings-level layer.
 - A denied call is reported in `.permission_denials`, naming the tool and its arguments. A run
   whose array is non-empty did not do what you asked, however finished its prose sounds — check
   the array, not the wording.

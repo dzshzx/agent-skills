@@ -54,29 +54,31 @@ Every contract's command then takes the prompt as `"$(cat "$BRIEF")"`; the quoti
 whole brief one argv entry. Building the command by concatenating prompt text into it is how a
 delegation silently runs something else.
 
+**Wrap every dispatch, first or resumed, as `timeout 1800 <command>` and run it in the
+background** (or under your runtime's longest foreground timeout). Dispatches run for minutes: a
+default command timeout cuts one off mid-task and the work is lost, and without `timeout` a hung
+CLI is a process you wait on forever. The contract commands are written bare and expect this
+wrapper.
+
 ## What the dispatch may do
 
 Send it with the working permissions the task needs — the posture you would take yourself for
 that piece of work: Claude `--permission-mode acceptEdits`, Codex `--sandbox workspace-write`,
-Kimi as it comes — `-p` takes no permission flag and runs every tool call, shell included, with no
-gate. When you want a report rather than edits, say so in the brief; that is how the vendors
-instruct their own review agents, and it is enough for ordinary delegations.
+Kimi as it comes — `-p` takes no permission flag and has no gate. When you want a report rather
+than edits, say so in the brief; that is how the vendors instruct their own review agents, and it
+is enough for ordinary delegations.
 
 Restrict mechanically when the user asks for a locked-down run, or when a stray write would be
 expensive to notice. The three restrict differently, and the user's choice of delegate stands:
 when the named CLI cannot enforce what was asked, say so and dispatch with the brief-level
 instruction rather than re-routing to another CLI.
 
-- **Codex `--sandbox read-only`** — OS sandbox: commands run, writes fail whatever issues them.
-- **Claude `--tools Read,Grep,Glob`** removes the tools themselves. `--permission-mode dontAsk`
-  only denies what would have prompted: `permissions.allow` rules from the cwd's settings
-  scopes, the built-in read-only command set and hook-approved calls still run, so it is as
-  tight as that policy and no tighter. The Bash sandbox (`sandbox.filesystem.denyWrite`) is a
-  further settings-level layer.
-- **Kimi `--agent-file` with a `tools:` whitelist** — excluded tools are really gone, matched by
-  name. The practical read-only set is `[Read, Grep, Glob, Bash]` (the vendor's own `explore`
-  recipe): the shell returns, `Write`/`Edit` stay gone, shell-borne writes ride on the brief.
-  Drop `Bash` for a hard no-shell boundary. Cannot combine with `-S`/`--continue`.
+- **Codex `--sandbox read-only`** — an OS sandbox: commands run, writes fail whatever issues them.
+- **Claude `--tools Read,Grep,Glob`** — removes the tools themselves; `--permission-mode dontAsk`
+  is only as tight as the cwd's permission policy. The contract has the policy detail.
+- **Kimi `--agent explore`** (the shell stays) **or `--agent-file` with a `tools:` whitelist**
+  (drop it there) — restricts by tool set, not by flag. The contract has the set, the file-name
+  rule and what a resume keeps.
 
 ## The brief
 
@@ -90,6 +92,8 @@ Everything the delegate needs travels in the brief:
 
 ## Handing results onward
 
+One invocation per task the user named — each reloads the delegate's whole instruction layer and
+may take many model turns — split only where a later dispatch would restart from a saved result.
 When one dispatch's result feeds another, put it in a file rather than carrying it through your
 own context. That file is at once the next dispatch's input and the point you restart from, so a
 failure re-runs one dispatch instead of everything before it. When a dispatch should continue
@@ -100,11 +104,6 @@ what it left behind (`git status` in its cwd) before re-running or resuming.
 Delegations that write files belong in an isolated worktree whenever the host project's rules
 call for one; follow those rules rather than inventing isolation here.
 
-## Runtime
-
-Dispatches run for minutes. Run every one, first or resumed, as `timeout 1800 <command>` in the
-background (or under your runtime's longest foreground timeout): a default command timeout cuts
-it off mid-task and the work is lost, and without a `timeout` a hung CLI is a process you wait on
-forever. The contract commands are written bare and expect this wrapper. One invocation per task
-the user named — each reloads the delegate's whole instruction layer and may take many model
-turns — split only where a later dispatch would restart from a saved result.
+A dispatch is done when its answer — the field the contract points at — is in your hands and
+checked against the brief's acceptance criteria. That answer is what reaches the user; the event
+stream stays in its file.
