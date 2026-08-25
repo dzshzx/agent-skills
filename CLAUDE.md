@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - skill 描述（frontmatter `description`）同时充当 agent 决定何时调用该 skill 的触发/路由文本——编辑时保持触发短语和范围边界（「不负责 X」）完整。
 - 这些 skill 也以安装拷贝形式存在于 agent runtime 目录（如 `~/.claude/skills/`、`~/.agents/skills/`）——本仓是唯一真源（基线在 initial commit 中从 runtime 目录导入）。在这里编辑一个 skill 后，安装拷贝在重新 install/sync 前即过期；不要直接编辑 runtime 拷贝。
-- **验证只有一道门，一条命令**：push 前跑 `scripts/verify.sh`——先机械门（与 CI 同一组：`validate_repository.py`、shellcheck、sync fixtures），再对相对 `origin/master` 有改动的 skill 跑各自的 `skills/<name>/evals/live-check.sh`（真调用、计费、需本机 CLI 与凭证，所以只在本地跑；`--all` 全跑，用于查 CLI 版本漂移）。每个 skill 必须有 live-check（`validate_repository.py` 强制），断言写在脚本头部，绿只证明断言的行为。不引入评分表、多轮爬山或 grader 子代理（2026-08-22 实证：纸面评分与真实行为会翻转，流程本身成仪式）。`evals/evals.json` 是参考题库，不是门禁。
+- **验证只有一道门，一条命令**：push 前跑 `scripts/verify.sh`——先机械门（与 CI 同一组：`validate_repository.py`、shellcheck、sync fixtures），再对相对 `origin/master` 有改动的 skill 跑各自的 `skills/<name>/evals/live-check.sh`（真调用、计费、需本机 CLI 与凭证，所以只在本地跑；`--all` 全跑，用于查 CLI 版本漂移）。每个 skill 必须有 live-check（`validate_repository.py` 强制），断言写在脚本头部，绿只证明断言的行为。**SKILL.md 里出现的每条命令行都要被真正执行过一次，不能只让 agent 复述它打算跑什么**——复述能通过的无效 flag 会一路穿过验证。不引入评分表、多轮爬山或 grader 子代理（2026-08-22 实证：纸面评分与真实行为会翻转，流程本身成仪式）。`evals/evals.json` 是参考题库，不是门禁。
 - 提交信息沿用既有模式：`skill(<name>): ...` / `feat(<name>): ...` / `chore: ...`，且 README 的 skill 表应与 `skills/` 下的内容保持同步。
 
 ## Agent skills
