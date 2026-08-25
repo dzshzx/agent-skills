@@ -32,7 +32,7 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
   whitelist; the excluded tools are really gone — pressed to write under a persona that wanted
   to comply, such a run enumerates only the tools it was given and reports no write capability.
   Drop `Bash` there for a hard no-shell boundary. The agent takes its name from the file's
-  basename, which must be kebab-case: `read-only.md` launches, a `mktemp` name is rejected
+  basename, which must be kebab-case: `$SCRATCH/read-only.md` launches, a `mktemp` name is rejected
   before any model call with `Invalid agent name … expected kebab-case`. `[[permission.rules]]`
   can deny `Bash(<pattern>)`, but a denylist over shell commands is not a boundary.
 

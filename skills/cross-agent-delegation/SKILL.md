@@ -41,10 +41,12 @@ user's own session in that CLI, and whatever that layer allows or forbids applie
 
 **Write the brief to a file; never interpolate it into the command string.** A brief carries
 newlines, quotes, backticks and `$(...)`, all of which the shell executes or mangles before the
-delegate ever sees them:
+delegate ever sees them. The brief, any agent file and the captured output share one scratch
+directory outside the delegate's cwd, so the `git status` you read afterwards shows the
+delegate's work and nothing of yours:
 
 ```bash
-BRIEF=$(mktemp)
+SCRATCH=$(mktemp -d); BRIEF=$SCRATCH/brief.md
 cat > "$BRIEF" <<'EOF'
 ...the brief...
 EOF
@@ -54,8 +56,9 @@ Every contract's command then takes the prompt as `"$(cat "$BRIEF")"`; the quoti
 whole brief one argv entry. Building the command by concatenating prompt text into it is how a
 delegation silently runs something else.
 
-**Wrap every dispatch, first or resumed, as `timeout 1800 <command>` and run it in the
-background** (or under your runtime's longest foreground timeout). Dispatches run for minutes: a
+**Wrap every dispatch, first or resumed, as `timeout 1800 <command>`, stdout into a file under
+`$SCRATCH`, and run it in the background** (or under your runtime's longest foreground timeout).
+Dispatches run for minutes: a
 default command timeout cuts one off mid-task and the work is lost, and without `timeout` a hung
 CLI is a process you wait on forever. The contract commands are written bare and expect this
 wrapper.
