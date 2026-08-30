@@ -30,7 +30,9 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
   enumerate itself (0.39.1, 2026-08-30) — with nothing to write beforehand: the shell returns,
   `Write` and `Edit` stay gone, and shell-borne writes ride on the brief. It reads images
   (`ReadMediaFile` delivers pixels, not bytes) and reaches the network; a custom whitelist that
-  must see images has to list `ReadMediaFile` itself.
+  must see images has to list `ReadMediaFile` itself. Without `--agent`, `-p` runs the full
+  default set — `Write`, `Edit`, `ReadMediaFile` and the rest — so a plain dispatch reads images
+  and writes files alike.
   `--agent-file <file.md>` selects your own definition, whose frontmatter `tools:` list is a
   whitelist; the excluded tools are really gone — pressed to write under a persona that wanted
   to comply, such a run enumerates only the tools it was given and reports no write capability.

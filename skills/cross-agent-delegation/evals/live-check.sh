@@ -4,7 +4,7 @@
 #   默认档（surface + parser）：--help 是否仍列出所用 flag；参数解析层的拒绝是否仍成立。
 #     零模型调用且 fail-closed：会真启动的命令都跑在无凭证的 CODEX_HOME / 不存在的 Kimi 模型下，
 #     契约一旦失效（原本该被拒的命令被接受）会在 401 / 模型解析处失败，而不是悄悄花一次调用。
-#   --smoke：真跑约 18 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
+#   --smoke：真跑约 20 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
 #     字段、退出码、续跑与权限行为。FAIL 行下附 stderr 尾巴，用来区分「行为断言失败」与「调用本身失败
 #     （401 / 限流 / 网络）」——后者不是契约失效。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
@@ -219,6 +219,21 @@ PY
   CALLED=$(called "$K/6.jsonl")
   [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/6.jsonl" \
     && ok "--agent explore：Bash 在（回显 NO-WRITE-TOOL），Write 缺席，无需 agent 文件（调用面：$CALLED）" || no "--agent explore 的工具面断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
+  # 契约：explore 能读图——ReadMediaFile 在工具面里且真的被调用（text-heavy-visual-workflow 的视觉审查靠它）；
+  # 默认姿态（无 --agent）同样读图且可写。证据看 tool_calls 与落盘文件，不看模型自报。
+  IMG="$K/px.png"; python3 -c 'import zlib,struct,sys
+def chunk(t,d): return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
+raw=b"".join(b"\x00"+bytes([255,0,0]*2) for _ in range(2))
+sys.stdout.buffer.write(b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",2,2,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(raw))+chunk(b"IEND",b""))' > "$IMG"
+  ( cd "$K" && timeout "$T" kimi -p "Look at the image file $IMG and reply with only its dominant color name." --agent explore --output-format stream-json >"$K/7.jsonl" 2>"$E" ); rc=$?
+  CALLED=$(called "$K/7.jsonl")
+  [ "$rc" -eq 0 ] && has ReadMediaFile "$CALLED" \
+    && ok "--agent explore：读图走 ReadMediaFile（调用面：$CALLED）" || no "--agent explore 读图断言失败（rc=$rc，调用面：$CALLED）"
+  F="$K/w4.txt"
+  ( cd "$K" && timeout "$T" kimi -p "Look at the image file $IMG, then create the file $F containing only its dominant color name." --output-format stream-json >"$K/8.jsonl" 2>"$E" ); rc=$?
+  CALLED=$(called "$K/8.jsonl")
+  [ "$rc" -eq 0 ] && has ReadMediaFile "$CALLED" && [ -f "$F" ] \
+    && ok "默认姿态：读图走 ReadMediaFile 且文件已落盘（可读图、可写；调用面：$CALLED）" || no "默认姿态断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
 fi
 
 echo "== $PASS ok / $FAIL fail"
