@@ -26,8 +26,11 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
   the run with `Cannot combine --prompt with <flag>`. Headless is pinned to the `auto` posture
   and executes tool calls — writes included — with no approval gate.
 - **Read-only comes from the tool set.** `--agent explore` selects the vendor's built-in
-  read-only agent, `tools: [Read, Grep, Glob, Bash]`, with nothing to write beforehand: the
-  shell returns, `Write` and `Edit` stay gone, and shell-borne writes ride on the brief.
+  read-only agent — `Read, Grep, Glob, Bash, ReadMediaFile, FetchURL, WebSearch` when asked to
+  enumerate itself (0.39.1, 2026-08-30) — with nothing to write beforehand: the shell returns,
+  `Write` and `Edit` stay gone, and shell-borne writes ride on the brief. It reads images
+  (`ReadMediaFile` delivers pixels, not bytes) and reaches the network; a custom whitelist that
+  must see images has to list `ReadMediaFile` itself.
   `--agent-file <file.md>` selects your own definition, whose frontmatter `tools:` list is a
   whitelist; the excluded tools are really gone — pressed to write under a persona that wanted
   to comply, such a run enumerates only the tools it was given and reports no write capability.
