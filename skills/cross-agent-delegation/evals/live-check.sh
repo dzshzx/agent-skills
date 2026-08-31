@@ -219,7 +219,7 @@ PY
   CALLED=$(called "$K/6.jsonl")
   [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/6.jsonl" \
     && ok "--agent explore：Bash 在（回显 NO-WRITE-TOOL），Write 缺席，无需 agent 文件（调用面：$CALLED）" || no "--agent explore 的工具面断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
-  # 契约：explore 能读图——ReadMediaFile 在工具面里且真的被调用（text-heavy-visual-workflow 的视觉审查靠它）；
+  # 契约：explore 能读图——ReadMediaFile 在工具面里且真的被调用（text-heavy-visual-workflow 的美学咨询/交付前检查靠它）；
   # 默认姿态（无 --agent）同样读图且可写。证据看 tool_calls 与落盘文件，不看模型自报。
   IMG="$K/px.png"; python3 -c 'import zlib,struct,sys
 def chunk(t,d): return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
