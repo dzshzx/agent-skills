@@ -48,6 +48,7 @@ H=$(codex exec resume --help 2>&1)
 for f in "--skip-git-repo-check" "--json" "--output-last-message"; do
   has "$f" "$H" && ok "codex exec resume --help 有 $f" || no "codex exec resume --help 缺 $f"
 done
+has "--sandbox" "$H" && no "codex exec resume 现在有 --sandbox 了（契约说它放 resume 之前）" || ok "codex exec resume 仍无 --sandbox"
 H=$(codex review --help 2>&1)
 has "--json" "$H" && no "codex review 现在有 --json 了（契约说它没有）" || ok "codex review 仍无 --json"
 has "--output-last-message" "$H" && no "codex review 现在有 -o 了" || ok "codex review 仍无 -o"
@@ -63,6 +64,9 @@ echo "== Codex：解析层拒绝（CODEX_HOME 无凭证，fail-closed）"
 ( cd "$NONGIT" && CODEX_HOME="$NOAUTH" timeout 60 codex exec resume --json 00000000-0000-0000-0000-000000000000 "noop" </dev/null >/dev/null 2>"$W/e" ); rc=$?
 [ "$rc" -ne 0 ] && has "--skip-git-repo-check" "$(cat "$W/e")" \
   && ok "非 git 目录 exec resume 同样要求 --skip-git-repo-check（rc=$rc）" || no "exec resume 不再受 git 门禁（rc=$rc）"
+CODEX_HOME="$NOAUTH" codex exec resume --sandbox read-only --json 00000000-0000-0000-0000-000000000000 "noop" </dev/null >/dev/null 2>"$W/e"; rc=$?
+[ "$rc" -eq 2 ] && has "unexpected argument '--sandbox'" "$(cat "$W/e")" \
+  && ok "resume 之后的 --sandbox 仍被拒（rc=2）" || no "resume 之后的 --sandbox 不再被拒（rc=$rc）"
 ( cd "$NONGIT" && CODEX_HOME="$NOAUTH" timeout 60 codex exec --sandbox read-only review --uncommitted --json </dev/null >/dev/null 2>"$W/e" ); rc=$?
 [ "$rc" -ne 0 ] && has "--skip-git-repo-check" "$(cat "$W/e")" \
   && ok "--sandbox 放在 review 之前可解析，review 也受 git 门禁（rc=$rc）" || no "--sandbox … review 解析或门禁行为已变（rc=$rc）"

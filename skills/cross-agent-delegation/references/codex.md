@@ -11,8 +11,14 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   `agent_message`, in `item.text`. `-o <file>` writes that final message text on its own — plain
   prose, easier to capture than the event stream, not a structured document. Both are
   per-invocation flags: a resume without them prints plain text.
-- Continue: `codex exec resume --skip-git-repo-check --json -o "$OUT" <thread_id> "$(cat "$BRIEF")" </dev/null`,
-  with the id from the `thread.started` event.
+- Continue: `codex exec --sandbox <mode> resume --skip-git-repo-check --json -o "$OUT" <thread_id> "$(cat "$BRIEF")" </dev/null`,
+  with the id from the `thread.started` event. `--sandbox` is an `exec` option and goes *before*
+  `resume` — after it, it is an unexpected argument (same rule as `review` below); `--skip-git-repo-check`,
+  `--json` and `-o` are accepted after `resume`.
+- `--sandbox workspace-write` keeps Codex's own state under `~/.codex` read-only even when
+  `writable_roots` covers `$HOME` — writes to `~/.codex/memories` fail with `Read-only file
+  system` (observed on 0.151.0). A dispatch that must write there needs
+  `--sandbox danger-full-access`.
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
   `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes *before*
   `review` — after it, it is an unexpected argument. A target and a custom prompt are exclusive:
