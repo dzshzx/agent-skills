@@ -57,8 +57,11 @@ scripts/verify.sh --all    # live checks for every skill, e.g. after a CLI upgra
 ```
 
 The mechanical gate is `python scripts/validate_repository.py`,
-`shellcheck -S warning skills/*/evals/*.sh scripts/*.sh` and
-`bash skills/sync-agents-instructions/evals/check.sh`; CI runs exactly those.
+`shellcheck -S warning skills/*/evals/*.sh scripts/*.sh`,
+`bash skills/sync-agents-instructions/evals/check.sh` and
+`bash scripts/check-commit-subjects.sh` (every commit subject in the pushed
+range is `type(scope): subject`, e.g. `fix(<skill>): …`; a bare `<skill>: …`
+prefix fails); CI runs exactly those.
 Live checks (`skills/<name>/evals/live-check.sh`, one per skill, enforced by
 the validator) make real, billed CLI calls and need the CLIs and credentials
 on the machine, so they run locally, never in CI.
