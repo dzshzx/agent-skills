@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 标准验证流程（push 前跑）：机械门 + 真跑门。
 # 用法：scripts/verify.sh [--all | --no-live] [skill ...]
-#   机械门：validate_repository.py、shellcheck、sync-agents-instructions 的 fixtures 门——与 CI 同一组命令。
+#   机械门：validate_repository.py、shellcheck、sync-agents-instructions 的 fixtures 门、
+#           check-commit-subjects.sh（origin/master..HEAD 的提交主题形态）——与 CI 同一组命令。
 #   真跑门：对「相对 origin/master 有改动（含未提交）」的 skill 跑 skills/<name>/evals/live-check.sh；
 #           --all 跑全部 skill（查 CLI 版本漂移）；显式给 skill 名只跑那些；--no-live 只跑机械门。
 #   真跑会计费（Claude / Codex / Kimi 真调用）且要求本机装有对应 CLI 与凭证，因此只在本地跑，不进 CI。
@@ -24,6 +25,7 @@ echo "#### 机械门（与 CI 相同）"
 run python3 scripts/validate_repository.py
 run shellcheck -S warning skills/*/evals/*.sh scripts/*.sh
 run bash skills/sync-agents-instructions/evals/check.sh
+run bash scripts/check-commit-subjects.sh
 [ "$MODE" = none ] && { echo; echo "#### 结果：$([ $FAIL -eq 0 ] && echo PASS || echo FAIL)（未跑真跑门）"; exit $FAIL; }
 
 if [ "$MODE" = changed ]; then

@@ -14,7 +14,8 @@
   （`validate_repository.py` 强制），断言写在脚本头部，绿只证明断言的行为。**SKILL.md 里出现的
   每条命令行都要被真正执行过一次，不能只让 agent 复述它打算跑什么**——复述能通过的无效 flag
   会一路穿过验证。不引入评分表、多轮爬山或 grader 子代理；`evals/evals.json` 只是参考题库。
-  提交信息沿用 `skill(<name>): …`、`feat(<name>): …` 或 `chore: …`。
+  提交信息为 `type(scope): subject` 形态——`skill(<name>): …`、`feat(<name>): …` 或 `chore: …`；
+  裸 `<name>: …` 不算，`scripts/check-commit-subjects.sh` 在 verify 与 CI 校验。
 - Release 候选先合入 `master`，等待该同一 SHA 的 CI 通过，再创建匹配的带
   注解 `vX.Y.Z` tag，保证 `npx skills add dzshzx/agent-skills` 的安装可复现。
   远端发布 tag 不移动、不复用；失败修复使用下一个 patch 版本。
