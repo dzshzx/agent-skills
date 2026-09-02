@@ -25,21 +25,22 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
 - **`-p` takes no permission flag at all.** `--auto`, `-y`, `--yolo` and `--plan` each abort
   the run with `Cannot combine --prompt with <flag>`. Headless is pinned to the `auto` posture
   and executes tool calls — writes included — with no approval gate.
-- **Read-only comes from the tool set.** `--agent explore` selects the vendor's built-in
-  read-only agent — `Read, Grep, Glob, Bash, ReadMediaFile, FetchURL, WebSearch` when asked to
-  enumerate itself (0.39.1, 2026-08-30) — with nothing to write beforehand: the shell returns,
-  `Write` and `Edit` stay gone, and shell-borne writes ride on the brief. It reads images
-  (`ReadMediaFile` delivers pixels, not bytes) and reaches the network; a custom whitelist that
-  must see images has to list `ReadMediaFile` itself. Without `--agent`, `-p` runs the full
-  default set — `Write`, `Edit`, `ReadMediaFile` and the rest — so a plain dispatch reads images
-  and writes files alike.
-  `--agent-file <file.md>` selects your own definition, whose frontmatter `tools:` list is a
-  whitelist; the excluded tools are really gone — pressed to write under a persona that wanted
-  to comply, such a run enumerates only the tools it was given and reports no write capability.
-  Drop `Bash` there for a hard no-shell boundary. The agent takes its name from the file's
-  basename, which must be kebab-case: `$SCRATCH/read-only.md` launches, a `mktemp` name is rejected
-  before any model call with `Invalid agent name … expected kebab-case`. `[[permission.rules]]`
-  can deny `Bash(<pattern>)`, but a denylist over shell commands is not a boundary.
+- **Read-only comes from the tool set.** Without `--agent`, `-p` runs the full default set —
+  `Write`, `Edit`, `ReadMediaFile` and the rest — so a plain dispatch reads images and writes
+  files alike.
+  - `--agent explore` selects the vendor's built-in read-only agent — `Read, Grep, Glob, Bash,
+    ReadMediaFile, FetchURL, WebSearch` when asked to enumerate itself — with nothing to write
+    beforehand: the shell returns, `Write` and `Edit` stay gone, and shell-borne writes ride on
+    the brief. It reads images (`ReadMediaFile` delivers pixels, not bytes) and reaches the
+    network.
+  - `--agent-file <file.md>` selects your own definition, whose frontmatter `tools:` list is a
+    whitelist; the excluded tools are really gone — pressed to write under a persona that wanted
+    to comply, such a run enumerates only the tools it was given and reports no write capability.
+    Drop `Bash` there for a hard no-shell boundary; a whitelist that must see images lists
+    `ReadMediaFile` itself. The agent takes its name from the file's basename, which must be
+    kebab-case: `$SCRATCH/read-only.md` launches, a `mktemp` name is rejected before any model
+    call with `Invalid agent name … expected kebab-case`. `[[permission.rules]]` can deny
+    `Bash(<pattern>)`, but a denylist over shell commands is not a boundary.
 
 ```markdown
 ---

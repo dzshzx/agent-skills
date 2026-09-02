@@ -4,8 +4,8 @@
 #   默认档（surface + parser）：--help 是否仍列出所用 flag；参数解析层的拒绝是否仍成立。
 #     零模型调用且 fail-closed：会真启动的命令都跑在无凭证的 CODEX_HOME / 不存在的 Kimi 模型下，
 #     契约一旦失效（原本该被拒的命令被接受）会在 401 / 模型解析处失败，而不是悄悄花一次调用。
-#   --smoke：真跑约 20 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
-#     字段、退出码、续跑与权限行为。FAIL 行下附 stderr 尾巴，用来区分「行为断言失败」与「调用本身失败
+#   --smoke：真跑约 30 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
+#     字段、退出码、续跑与权限行为、brief 经 argv 原样到达。FAIL 行下附 stderr 尾巴，用来区分「行为断言失败」与「调用本身失败
 #     （401 / 限流 / 网络）」——后者不是契约失效。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
 set -u
@@ -25,10 +25,9 @@ for c in claude codex kimi; do
   command -v "$c" >/dev/null 2>&1 || { echo "缺少 $c，无法检测"; exit 2; }
 done
 
-echo "== 版本（契约建立于 Claude 2.1.241 / Codex 0.149.0 / Kimi 0.38.0）"
+echo "== 实装版本（契约是否成立由下面的断言决定，不由版本号决定）"
 printf '  claude %s\n  codex  %s\n  kimi   %s\n' \
   "$(claude --version 2>/dev/null)" "$(codex --version 2>/dev/null)" "$(kimi --version 2>/dev/null)"
-echo "  契约是否成立由下面的断言决定，不由版本号决定。"
 
 echo "== Claude：flag 面"
 H=$(claude --help 2>&1)
@@ -76,6 +75,13 @@ CODEX_HOME="$NOAUTH" codex exec review --sandbox read-only --json </dev/null >/d
 CODEX_HOME="$NOAUTH" codex exec review --uncommitted --json "prompt" </dev/null >/dev/null 2>"$W/e"; rc=$?
 [ "$rc" -eq 2 ] && has "cannot be used with" "$(cat "$W/e")" \
   && ok "--uncommitted 与自定义 prompt 仍互斥（rc=2）" || no "--uncommitted 与 prompt 不再互斥（rc=$rc）"
+# 契约：非 TTY 且未关闭的 stdin 让 exec 一直等（读附加 prompt 直到 EOF）；</dev/null 才放行启动
+( cd "$NONGIT" && sleep 8 | CODEX_HOME="$NOAUTH" timeout 5 codex exec --skip-git-repo-check --json "noop" >/dev/null 2>"$W/e" ); rc=$?
+[ "$rc" -eq 124 ] && has "Reading additional" "$(cat "$W/e")" \
+  && ok "未关闭的非 TTY stdin：exec 等待到 timeout（rc=124，stderr 报 Reading additional）" || no "非 TTY stdin 的等待行为已变（rc=$rc）：$(head -c 120 "$W/e")"
+( cd "$NONGIT" && CODEX_HOME="$NOAUTH" timeout 60 codex exec --skip-git-repo-check --json "noop" </dev/null >/dev/null 2>"$W/e" ); rc=$?
+[ "$rc" -ne 124 ] && [ "$rc" -ne 0 ] \
+  && ok "</dev/null 放行启动，随后在无凭证处失败（rc=$rc）" || no "</dev/null 后的启动行为已变（rc=$rc）"
 
 echo "== Kimi：flag 面"
 H=$(kimi --help 2>&1)
@@ -103,6 +109,9 @@ done
 ( cd "$NONGIT" && timeout 60 kimi -p noop -r session_does-not-exist -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
 [ "$rc" -ne 0 ] && has "not found" "$(cat "$W/e")" \
   && ok "-r <id> 被当作 session id 解析（不存在即报错，非静默忽略）" || no "-r 的解析行为已变（rc=$rc）：$(head -c 120 "$W/e")"
+# 契约：没有 -p 就进 TUI 挂住，关闭的 stdin 不放行；只有外层 timeout 能把它变成失败
+( cd "$NONGIT" && timeout 5 kimi -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
+[ "$rc" -eq 124 ] && ok "无 -p：进入 TUI 并挂住，关闭的 stdin 不放行（timeout rc=124）" || no "无 -p 的 TUI 挂住行为已变（rc=$rc）：$(head -c 120 "$W/e")"
 
 if [ "${1:-}" = "--smoke" ]; then
   E="$W/stderr"                           # 每次真跑的 stderr；no() 失败时附其尾巴
@@ -111,6 +120,22 @@ if [ "${1:-}" = "--smoke" ]; then
   S="$W/a"; mkdir -p "$S"   # 目录名不用 claude：实测 cwd basename 为 claude 时会被 API 安全层误拦
   # jerr <json>：失败归因——Claude 的错误进 JSON 而非 stderr，打印 terminal_reason 与 result 头
   jerr(){ python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("terminal_reason"),"|",str(d.get("result"))[:160])' "$1" 2>&1 | head -c 200; }
+  # 契约（SKILL.md）：brief 写进文件、以 "$(cat "$BRIEF")" 作单个 argv 传入，shell 敏感片段原样到达。三家各跑一次。
+  HB="$W/hostile.md"
+  cat > "$HB" <<'EOF'
+Reply with exactly the text on the line between the two marker lines, byte for byte, with no code fence and nothing else.
+<<<
+tick `whoami` dollar $(echo pwned) quote "dq" 'sq' backslash \n marker-7f3a
+>>>
+EOF
+  # intact <textfile>：brief 里每个 shell 敏感片段都原样出现在答复里
+  intact(){ python3 - "$1" <<'PY'
+import sys
+t=open(sys.argv[1]).read()
+need=["`whoami`","$(echo pwned)",'"dq"',"'sq'","\\n","marker-7f3a"]
+sys.exit(0 if all(x in t for x in need) else 1)
+PY
+  }
   ( cd "$S" && timeout "$T" claude -p "Remember this word and nothing else: pineapple. Reply with exactly: noted" --output-format json --permission-mode acceptEdits $CM </dev/null >"$S/1.json" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && py "$S/1.json" 'd["is_error"] is False and "noted" in d["result"] and d["session_id"] and isinstance(d["permission_denials"], list)' \
     && ok "成功运行：rc=0，.is_error=false，.result/.session_id/.permission_denials 在位" \
@@ -131,6 +156,49 @@ if [ "${1:-}" = "--smoke" ]; then
   ( cd "$S" && timeout "$T" claude -p "Use the Write tool to create $F containing hi. If you cannot, reply with exactly: NO-WRITE" --tools Read,Grep,Glob --output-format json $CM </dev/null >"$S/5.json" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && [ ! -f "$F" ] && py "$S/5.json" 'd["is_error"] is False and "NO-WRITE" in d["result"]' \
     && ok "--tools Read,Grep,Glob：运行成功，Write 工具不存在，文件未产生，模型自报 NO-WRITE" || no "--tools 白名单断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)）"
+  # 契约：acceptEdits 只放行编辑；-p 无法弹窗，Bash 被拒并记入 .permission_denials；--allowedTools 'Bash(<cmd>:*)' 逐条放行
+  BASHP="Run this exact shell command with the Bash tool: python3 -c 'print(6*7)' . Reply with only the command's output. If the tool call is denied, reply with exactly: DENIED"
+  ( cd "$S" && timeout "$T" claude -p "$BASHP" --permission-mode acceptEdits --output-format json $CM </dev/null >"$S/6.json" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && py "$S/6.json" 'd["is_error"] is False and "DENIED" in d["result"] and d["permission_denials"] and d["permission_denials"][0].get("tool_name") == "Bash"' \
+    && ok "acceptEdits：Bash 被自动拒绝并记入 .permission_denials（tool_name=Bash）" || no "acceptEdits 下 Bash 的拒绝行为已变（rc=$rc）：$(jerr "$S/6.json")"
+  ( cd "$S" && timeout "$T" claude -p "$BASHP" --permission-mode acceptEdits --allowedTools 'Bash(python3:*)' --output-format json $CM </dev/null >"$S/7.json" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && py "$S/7.json" 'd["is_error"] is False and "42" in d["result"] and d["permission_denials"] == []' \
+    && ok "acceptEdits + --allowedTools 'Bash(python3:*)'：命令放行，输出 42，无拒绝记录" || no "--allowedTools 放行断言失败（rc=$rc）：$(jerr "$S/7.json")"
+  # 契约：--resume 恢复对话不恢复姿态。--settings 把本次 defaultMode 钉为 acceptEdits，断言不依赖本机 settings。
+  #   行为面：dontAsk 会话裸续跑 → 写成功。姿态面用 init 事件确定判定（见下），不经模型意愿。
+  ACC='{"permissions":{"defaultMode":"acceptEdits"}}'
+  SID4=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["session_id"])' "$S/4.json" 2>/dev/null)
+  F="$S/r1.txt"
+  ( cd "$S" && timeout "$T" claude -p --resume "$SID4" "Use the Write tool to create $F containing hi. If the tool call is denied, reply with exactly: DENIED" --settings "$ACC" --output-format json $CM </dev/null >"$S/8.json" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && [ -f "$F" ] && py "$S/8.json" 'd["is_error"] is False and d["permission_denials"] == []' \
+    && ok "dontAsk 会话裸 --resume：写成功——权限模式不随会话恢复" || no "dontAsk 会话裸 --resume 的行为已变（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)）：$(jerr "$S/8.json")"
+  # 契约：stream-json --verbose 首条 system/init 事件带 permissionMode 与 tools，是本次运行实际拿到的姿态。
+  # init <jsonl> <expr>：对 init 事件求值，expr 里 e 为该事件；没有 init 事件即失败
+  init(){ python3 -c '
+import json,sys
+for line in open(sys.argv[1]):
+    try: e=json.loads(line)
+    except Exception: continue
+    if e.get("type")=="system" and e.get("subtype")=="init": sys.exit(0 if eval(sys.argv[2]) else 1)
+sys.exit(1)' "$1" "$2" 2>/dev/null; }
+  ( cd "$S" && timeout "$T" claude -p "Reply with exactly: OK" --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --output-format stream-json --verbose $CM </dev/null >"$S/9.jsonl" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && init "$S/9.jsonl" 'e["permissionMode"]=="dontAsk" and sorted(e["tools"])==["Glob","Grep","Read"] and e["mcp_servers"]==[]' \
+    && ok "init 事件：--tools Read,Grep,Glob --strict-mcp-config --permission-mode dontAsk → tools 恰为三个、无 MCP、dontAsk" || no "init 事件的 tools/permissionMode/mcp_servers 形状已变（rc=$rc）"
+  SID9=$(python3 -c '
+import json,sys
+for line in open(sys.argv[1]):
+    e=json.loads(line)
+    if e.get("type")=="system" and e.get("subtype")=="init": print(e["session_id"]); break' "$S/9.jsonl" 2>/dev/null)
+  ( cd "$S" && timeout "$T" claude -p --resume "$SID9" "Reply with exactly: OK" --settings "$ACC" --output-format stream-json --verbose $CM </dev/null >"$S/10.jsonl" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && init "$S/10.jsonl" 'e["permissionMode"]=="acceptEdits" and "Write" in e["tools"]' \
+    && ok "裸 --resume 的 init 事件：permissionMode 落回默认（此处钉为 acceptEdits）、Write 回到 tools——姿态不随会话恢复" || no "裸 --resume 的姿态行为已变（rc=$rc）"
+  ( cd "$S" && timeout "$T" claude -p --resume "$SID9" "Reply with exactly: OK" --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --output-format stream-json --verbose $CM </dev/null >"$S/11.jsonl" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && init "$S/11.jsonl" 'e["permissionMode"]=="dontAsk" and "Write" not in e["tools"] and e["mcp_servers"]==[]' \
+    && ok "--resume 重传三个 flag 的 init 事件：dontAsk、无 Write、无 MCP——姿态要每次续跑重传" || no "--resume 重传 flag 未生效（rc=$rc）"
+  ( cd "$S" && timeout "$T" claude -p "$(cat "$HB")" --output-format json $CM </dev/null >"$S/12.json" 2>"$E" ); rc=$?
+  python3 -c 'import json,sys;open(sys.argv[2],"w").write(str(json.load(open(sys.argv[1])).get("result","")))' "$S/12.json" "$S/12.txt" 2>/dev/null
+  [ "$rc" -eq 0 ] && intact "$S/12.txt" \
+    && ok '"$(cat "$BRIEF")"：含反引号、$()、引号与 \n 的 brief 原样到达（.result）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$S/12.txt" 2>/dev/null)"
 
   echo "== smoke：Codex（真跑）"
   C="$W/b"; mkdir -p "$C"
@@ -167,6 +235,9 @@ PY
     && ok "read-only：写被 OS sandbox 拦下，运行正常收尾（rc=$rc）" || no "read-only 下产生了文件或运行异常（rc=$rc）"
   ( cd "$P" && timeout "$T" codex exec --skip-git-repo-check --sandbox workspace-write --json "Create the file $P/rw.txt containing hi, then confirm in one sentence." </dev/null >"$P/rw.jsonl" 2>"$E" ); rc=$?
   [ -f "$P/rw.txt" ] && ok "workspace-write：写被放行（rc=$rc）" || no "workspace-write 下写未生效（rc=$rc）"
+  ( cd "$C" && timeout "$T" codex exec --skip-git-repo-check --sandbox read-only --json -o "$C/h.txt" "$(cat "$HB")" </dev/null >"$C/h.jsonl" 2>"$E" ); rc=$?
+  [ "$rc" -eq 0 ] && intact "$C/h.txt" \
+    && ok '"$(cat "$BRIEF")"：含反引号、$()、引号与 \n 的 brief 原样到达（-o 文本）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$C/h.txt" 2>/dev/null)"
 
   echo "== smoke：Kimi（真跑）"
   K="$W/c"; mkdir -p "$K"
@@ -223,6 +294,13 @@ PY
   CALLED=$(called "$K/6.jsonl")
   [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/6.jsonl" \
     && ok "--agent explore：Bash 在（回显 NO-WRITE-TOOL），Write 缺席，无需 agent 文件（调用面：$CALLED）" || no "--agent explore 的工具面断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
+  # 契约：-S 续跑不接 --agent，创建时绑定的 agent 自动恢复——explore 会话续跑仍无 Write
+  { read -r XSID; read -r _; } < <(last "$K/6.jsonl")
+  F="$K/w5.txt"
+  ( cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi——只用 Write 工具，不要用 Bash 写文件。如果你的工具集没有 Write 工具，就用 Bash 运行 echo NO-WRITE-TOOL 代替。" -S "$XSID" --output-format stream-json >"$K/9.jsonl" 2>"$E" ); rc=$?
+  CALLED=$(called "$K/9.jsonl")
+  [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/9.jsonl" \
+    && ok "--agent explore 会话 -S 续跑：Write 仍缺席、Bash 在（调用面：$CALLED）——agent 随会话恢复" || no "explore 会话续跑的工具面断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
   # 契约：explore 能读图——ReadMediaFile 在工具面里且真的被调用（text-heavy-visual-workflow 的美学咨询/交付前检查靠它）；
   # 默认姿态（无 --agent）同样读图且可写。证据看 tool_calls 与落盘文件，不看模型自报。
   IMG="$K/px.png"; python3 -c 'import zlib,struct,sys
@@ -238,6 +316,21 @@ sys.stdout.buffer.write(b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB
   CALLED=$(called "$K/8.jsonl")
   [ "$rc" -eq 0 ] && has ReadMediaFile "$CALLED" && [ -f "$F" ] \
     && ok "默认姿态：读图走 ReadMediaFile 且文件已落盘（可读图、可写；调用面：$CALLED）" || no "默认姿态断言失败（rc=$rc，文件$( [ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
+  # kans <jsonl> <out>：把最后一条带 content 的 assistant 行原样写进文件（多行答复不经 read 截断）
+  kans(){ python3 - "$1" "$2" <<'PY'
+import json,sys
+ans=""
+for line in open(sys.argv[1]):
+    try: e=json.loads(line)
+    except Exception: continue
+    if e.get("role")=="assistant" and isinstance(e.get("content"),str): ans=e["content"]
+open(sys.argv[2],"w").write(ans)
+PY
+  }
+  ( cd "$K" && timeout "$T" kimi -p "$(cat "$HB")" --output-format stream-json >"$K/h.jsonl" 2>"$E" ); rc=$?
+  kans "$K/h.jsonl" "$K/h.txt"
+  [ "$rc" -eq 0 ] && intact "$K/h.txt" \
+    && ok '"$(cat "$BRIEF")"：含反引号、$()、引号与 \n 的 brief 原样到达（最后一条 assistant content）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$K/h.txt" 2>/dev/null)"
 fi
 
 echo "== $PASS ok / $FAIL fail"
