@@ -2,7 +2,7 @@
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
-The six-status vocabulary, the mapping from the skills' five triage roles, and the GitHub label convention (non-terminal = open + same-name label; `resolved` = closed; `wontfix` = closed + `wontfix`) live in `~/.config/agent-instructions/shared.md`, section 「Agent 工作文件」.
+The six-status vocabulary, the mapping from the skills' five triage roles, and the GitHub label convention (non-terminal = open + same-name label; `resolved` = closed; `wontfix` = closed + `wontfix`) live in `~/.config/agent-instructions/agent-workfiles.md`, section 「Agent 工作文件」.
 
 ## Conventions
 
