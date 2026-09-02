@@ -18,8 +18,9 @@ off_limits = ["**/docs/agents/**", "**/conventions/**"]
 
 # Shared instruction sources — the vertical slices of the user level.
 # role  = what belongs here (the owner's split; the skill enforces it).
-# domain = slice name; load = "always" (native inject) | "on-demand" (lazy
-# trigger pointer in entry files: "when doing X, read Y").
+# domain = slice name; load = "always" (native inject) | "on-demand" (lazy:
+# read when its trigger fires; the trigger lives in the entry file, or in the
+# trigger list of an "always" source the entry loads).
 [[shared_sources]]
 path = "~/.config/agent-instructions/shared.md"
 role = "volatile machine/infrastructure facts (ports, paths, endpoints)"

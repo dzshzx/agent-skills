@@ -88,7 +88,7 @@ surface depend on a different one.
 | --- | --- | --- |
 | every task, any domain | behavior contract | `always` |
 | every task, machine-dependent | machine facts | `always` |
-| one technical domain | that domain's slice | `on-demand` (one-line trigger in entries) |
+| one technical domain | that domain's slice | `on-demand` (trigger reachable from the entry: a pointer line there, or the trigger list in an `always` source the entry loads) |
 | only one agent | that agent's entry file (or `agent_specific_file`) | that owner's scope |
 
 Anti-fragmentation: a new slice needs one cohesive theme that an entry file
@@ -110,7 +110,8 @@ Remove a project-local rule only when all three hold **for the same owner**:
 1. A configured shared source carries all of its meaning.
 2. That owner's entry file verifiably loads that source — native expansion,
    an unconditional read instruction, or (for `on-demand`) an explicit
-   trigger whose scope covers every case the local rule applies to. Advisory
+   trigger — in the entry, or in an `always` source the entry loads — whose
+   scope covers every case the local rule applies to. Advisory
    wording ("suggest", "when useful") is not a load route.
 3. Nothing project- or agent-specific is lost.
 
