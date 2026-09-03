@@ -5,6 +5,7 @@ Usage: validate_config.py [--schema-only] [CONFIG]
   CONFIG defaults to $XDG_CONFIG_HOME/agent-instructions/sync-config.toml
   (~/.config when XDG_CONFIG_HOME is unset).
   --schema-only skips the filesystem checks (referenced files must exist).
+  Machine paths may use ~ and $VAR; both are expanded before checking.
 
 Exit 0: valid. Exit 1: errors, one per line on stderr. Exit 2: usage or unreadable config.
 """
@@ -20,7 +21,8 @@ from pathlib import Path
 LOAD_MODES = {"always", "on-demand"}
 ALWAYS_LOAD_MODES = {"native", "mandatory-entry-read"}
 TOP_LEVEL = {"workspace", "shared_sources", "agents", "repository_exclusions"}
-WORKSPACE_KEYS = {"project_globs", "off_limits"}
+WORKSPACE_REQUIRED = {"project_globs"}
+WORKSPACE_OPTIONAL = {"off_limits"}
 SHARED_SOURCE_KEYS = {"path", "role", "domain", "load"}
 AGENT_REQUIRED = {"name", "entry_file", "project_instruction_file", "always_load_mode"}
 AGENT_OPTIONAL = {"agent_specific_file", "skill_dirs", "runtime_constructs", "readonly_project_surfaces"}
@@ -33,7 +35,7 @@ def default_config() -> Path:
 
 
 def normalize_machine_path(value: str) -> str:
-    return os.path.normpath(os.path.expanduser(value))
+    return os.path.normpath(os.path.expandvars(os.path.expanduser(value)))
 
 
 def normalize_repo_path(value: str) -> str:
@@ -103,7 +105,7 @@ class Checker:
         return self.errors
 
     def workspace(self) -> None:
-        ws = self.table("workspace", self.data.get("workspace"), WORKSPACE_KEYS)
+        ws = self.table("workspace", self.data.get("workspace"), WORKSPACE_REQUIRED, WORKSPACE_OPTIONAL)
         if "project_globs" in ws:
             self.string_list("workspace.project_globs", ws["project_globs"], allow_empty=False)
         if "off_limits" in ws:
@@ -139,10 +141,10 @@ class Checker:
             entry = self.table(where, entry, AGENT_REQUIRED, AGENT_OPTIONAL)
             name = self.string(f"{where}.name", entry["name"]) if "name" in entry else None
             if name is not None:
-                where = f"agents[{name}]"
                 if name in names:
                     self.error(f"{where}.name", f"duplicates {names[name]}")
-                names[name] = where
+                else:
+                    names[name] = where = f"agents[{name}]"
             if "entry_file" in entry and (entry_file := self.string(f"{where}.entry_file", entry["entry_file"])):
                 normalized = normalize_machine_path(entry_file)
                 if normalized in entries:
@@ -163,8 +165,16 @@ class Checker:
                 if key in entry:
                     self.string_list(f"{where}.{key}", entry[key], allow_empty=True)
             if "readonly_project_surfaces" in entry:
-                for surface in self.string_list(f"{where}.readonly_project_surfaces", entry["readonly_project_surfaces"], allow_empty=True):
-                    readonly.append((where, surface, normalize_repo_path(surface)))
+                field = f"{where}.readonly_project_surfaces"
+                seen_readonly: set[str] = set()
+                for surface in self.string_list(field, entry["readonly_project_surfaces"], allow_empty=True):
+                    normalized = self.repo_surface(field, surface)
+                    if normalized is None:
+                        continue
+                    if normalized in seen_readonly:
+                        self.error(field, f"{surface!r} is listed more than once")
+                    seen_readonly.add(normalized)
+                    readonly.append((where, surface, normalized))
         for where, surface, normalized in readonly:
             owner = owners.get(normalized)
             if owner is None:
@@ -173,12 +183,21 @@ class Checker:
                 self.error(f"{where}.readonly_project_surfaces", f"{surface!r} is this agent's own surface")
 
     def owner_surface(self, where: str, value: object) -> str | None:
-        field = f"{where}.project_instruction_file"
+        return self.repo_surface(f"{where}.project_instruction_file", value)
+
+    def repo_surface(self, field: str, value: object) -> str | None:
+        """Validate one repo-relative surface path; return its normalized form or None."""
         surface = self.string(field, value)
         if surface is None:
             return None
         if surface.startswith(("/", "~")) or ":" in surface.split("/", 1)[0]:
             self.error(field, "must be repo-relative, not absolute or ~-based")
+            return None
+        if "\\" in surface:
+            self.error(field, "must use / separators")
+            return None
+        if surface.endswith("/"):
+            self.error(field, "must name a file, not a directory")
             return None
         normalized = normalize_repo_path(surface)
         if normalized == "." or normalized.startswith("../"):

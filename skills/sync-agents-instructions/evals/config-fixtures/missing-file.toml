@@ -1,0 +1,16 @@
+# Schema-valid, but the referenced files do not exist: only the filesystem
+# check (no --schema-only) may reject this.
+[workspace]
+project_globs = ["~/workspace/*"]
+
+[[shared_sources]]
+path = "/nonexistent/sync-agents-instructions/shared.md"
+role = "machine facts"
+domain = "machine-facts"
+load = "always"
+
+[[agents]]
+name = "codex"
+entry_file = "/nonexistent/sync-agents-instructions/AGENTS.md"
+always_load_mode = "mandatory-entry-read"
+project_instruction_file = "AGENTS.md"

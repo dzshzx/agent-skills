@@ -1,11 +1,11 @@
 # sync-agents-instructions machine topology config.
 # Default location: ~/.config/agent-instructions/sync-config.toml
-# Every path may use ~ for the user home.
+# Every machine path may use ~ for the user home and $VAR environment variables.
 
 [workspace]
 # Where project repos live (globs, evaluated non-recursively per entry).
 project_globs = ["~/workspace/*"]
-# Files this skill must NEVER write or restructure (project workflow owners).
+# Optional: files this skill must NEVER write or restructure (project workflow owners).
 off_limits = ["**/docs/agents/**", "**/conventions/**"]
 # The natively-injected surface (entry files + all load="always" sources) is
 # sized by value, not by line count — see SKILL.md for the demote signals.

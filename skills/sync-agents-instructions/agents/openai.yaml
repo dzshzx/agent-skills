@@ -1,4 +1,4 @@
 interface:
   display_name: "Sync AGENTS Instructions"
   short_description: "Govern independent per-agent instruction surfaces"
-  default_prompt: "治理 workspace 的独立 per-agent 指令面：验证 owner-bound 配置、隔离跨 owner 依赖，并只收敛同一 owner 已证明覆盖的规则"
+  default_prompt: "治理 workspace 的独立 per-agent 指令面：验证 owner-bound 配置、把共享规则加进用户级源并接通各 owner 的加载路由、隔离跨 owner 依赖，并只收敛同一 owner 已证明覆盖的规则"

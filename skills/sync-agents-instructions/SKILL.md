@@ -28,10 +28,11 @@ config the user names, or from
 `$XDG_CONFIG_HOME/agent-instructions/sync-config.toml` (conventional config
 home when unset). If no config exists, stop and offer to create one — do not
 infer a topology from directory listings. See
-[references/config-example.toml](references/config-example.toml).
+[references/config-example.toml](references/config-example.toml). Machine
+paths in the config may use `~` and `$VAR`.
 
 - `[workspace]` — `project_globs` (repo candidates, expanded non-recursively),
-  `off_limits` (paths this skill never writes).
+  optional `off_limits` (paths this skill never writes).
 - `[[shared_sources]]` — `path`, `role` (what belongs there), `domain`
   (slice), `load` = `"always"` | `"on-demand"`.
 - `[[agents]]` — one per agent: `name`, `entry_file`,
@@ -74,7 +75,8 @@ surface depend on a different one.
 1. Contains a project-specific atom (repo path, deployment gate, domain
    boundary, spec pointer) → the current owner's project surface.
 2. Is project workflow or executable convention (how to test/branch/release)
-   → its `off_limits` owner; report it, never absorb it.
+   → the project's own workflow docs (the files `off_limits` names); report
+   it, never absorb it.
 3. Holds across two or more projects with no project atoms → user level.
    Promote when the rule is stated without project atoms and would apply
    unchanged to any repo on this machine — a second sighting corroborates
@@ -137,25 +139,29 @@ summary; ask only when the ambiguity changes what you would write.
 3. Execute the plan directly — additions, isolation fixes, and removals of
    project-local rules all proceed within the current request; report every
    write with its diff, and every removal with its covering source and load
-   route. 🔴 Confirm first only for the one write Git cannot restore:
-   writing a gitignored instruction file (no second copy). `off_limits`
-   paths are never written, confirmed or not (see Boundaries).
+   route. 🔴 Confirm first before editing a project surface Git cannot
+   restore — one that is untracked or gitignored has no second copy, so
+   state the exact edit and wait. Shared sources and entry files are
+   user-level files the request is about: write them directly, in or out of
+   Git. `off_limits` paths are never written, confirmed or not (see
+   Boundaries).
 4. Execute shared sources and entry load routes first, then project-local
    removals, re-checking that the recorded coverage still holds. Edit only
    the declared owner's surface; do not create missing surfaces.
 5. Validate: `git status --short` and `git diff -- <surface>` per repo;
    commit a tracked surface with `git commit --only -- <surface>` (it rejects
-   untracked paths). A surface that exists untracked and not ignored is
-   reported as such and left unstaged — ask before adding it to version
-   control; a gitignored surface follows Boundaries. Leave unrelated dirty
-   paths untouched; confirm no cross-owner reference was introduced.
+   untracked paths). An untracked, not-ignored surface is edited only after
+   the step 3 confirmation, reported as such and left unstaged — ask before
+   adding it to version control; a gitignored surface follows Boundaries.
+   Leave unrelated dirty paths untouched; confirm no cross-owner reference
+   was introduced.
 
 ## Boundaries
 
 - Managed or generated blocks (plugins, tools, generated sections) are
   opaque — do not interpret, reformat, or remove them.
-- Gitignored instruction files are governed too: same comparison and
-  confirmation, validated by content diff, reported separately as local-only;
-  never force-add or commit them.
+- Gitignored instruction files are governed too: same comparison, same
+  confirmation as any untracked surface, validated by content diff, reported
+  separately as local-only; never force-add or commit them.
 - Never write `off_limits` paths, never edit another owner's surface as a
   shortcut, never hardcode discovered topology into this skill.
