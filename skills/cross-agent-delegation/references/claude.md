@@ -1,14 +1,18 @@
 # Claude Code — headless contract
 
 ```bash
-claude -p "$(cat "$BRIEF")" --output-format json --permission-mode acceptEdits </dev/null
+claude -p --output-format json --permission-mode acceptEdits -- "$(cat "$BRIEF")" </dev/null
 ```
 
 - Answer: `.result`. Continuation handle: `.session_id`.
+- `--` before the prompt: a brief whose first line starts with `-` is otherwise parsed as an
+  option (`error: unknown option '- …'`, exit 1, no model call). An empty prompt is rejected at
+  the same stage. A start that fails before any API call — unknown model, missing credentials —
+  still writes the JSON result to stdout with `is_error: true`; stderr gets a one-line tag.
 - **Failure lives in `.is_error` and `.terminal_reason`, never `.subtype`.** A failed run exits
   non-zero with `"is_error":true` while `subtype` still reads `"success"`. Branching on
   `subtype` reports every failure as a success.
-- Continue: `claude -p --resume <session_id> "$(cat "$BRIEF")" --output-format json --permission-mode <mode> </dev/null`.
+- Continue: `claude -p --resume <session_id> --output-format json --permission-mode <mode> -- "$(cat "$BRIEF")" </dev/null`.
   **A resume restores the conversation, not the posture.** It starts under the cwd's default
   permission mode with the full tool set: a `dontAsk` session resumed bare wrote the file it had
   just been denied, and a `--tools Read,Grep,Glob` session resumed bare lists `Write` in its

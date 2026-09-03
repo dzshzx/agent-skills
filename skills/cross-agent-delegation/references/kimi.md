@@ -14,8 +14,9 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
   `kimi -r <id>`; `-r` is absent from `--help` but resumes the same session (both forms recall
   earlier turns). A resumed session takes no `--agent`/`--agent-file`: the agent bound at
   creation is restored automatically, so a read-only dispatch resumes read-only.
-- `-p` reads the prompt from argv; no `</dev/null` needed. A mistyped flag is rejected at parse
-  time (exit 1). A command line with no `-p` at all — `kimi -r <id>` alone — opens the
+- `-p` takes the brief as its value; no `</dev/null` and no `--` needed — a first line starting
+  with `-` or `---` arrives as text. An empty prompt is rejected (`Prompt cannot be empty`, exit
+  1), as is a mistyped flag, both at parse time. A command line with no `-p` at all — `kimi -r <id>` alone — opens the
   interactive TUI and waits for a keypress, the trust prompt first in a cwd Kimi has not seen; a
   closed stdin does not release it. Only the `timeout` around the dispatch turns that hang into a
   failure.

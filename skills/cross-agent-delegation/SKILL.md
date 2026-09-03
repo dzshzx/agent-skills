@@ -47,19 +47,28 @@ SCRATCH=$(mktemp -d); BRIEF=$SCRATCH/brief.md; OUT=$SCRATCH/out; ERR=$SCRATCH/er
 cat > "$BRIEF" <<'EOF'
 ...the brief...
 EOF
+[ -s "$BRIEF" ] || exit 1
 ```
 
-Every contract's command then takes the prompt as `"$(cat "$BRIEF")"`; the quoting keeps the
-whole brief one argv entry, and backticks, `$(...)`, quotes and newlines reach the delegate byte
-for byte. Building the command by concatenating prompt text into it is how a delegation silently
-runs something else.
+Every contract's command then takes the prompt as its last argument, `-- "$(cat "$BRIEF")"`: the
+quoting keeps the whole brief one argv entry, so backticks, `$(...)`, quotes and newlines reach
+the delegate byte for byte, and the `--` stops Claude and Codex from reading a brief whose first
+line starts with `-` — a Markdown list item, a `---` front-matter fence — as an option (without
+it they fail at parse time, `unknown option` / `unexpected argument`, before any model call).
+Kimi takes the brief as the value of `-p` and needs no `--`. Building the command by
+concatenating prompt text into it is how a delegation silently runs something else. Two limits:
+an empty brief is rejected by Claude and Kimi but sent by Codex as a real turn (hence the `-s`
+check), and one argv entry is capped at 128 KiB on Linux — a brief that inlines a large diff or
+log fails with `Argument list too long` before the CLI starts; point the delegate at the file
+instead.
 
 **Wrap every dispatch, first or resumed, as `timeout 1800 <command> >"$OUT" 2>"$ERR"` — a fresh
-pair of files per dispatch — and run it in the background** (or under your runtime's longest
-foreground timeout). Dispatches run for minutes: a default command timeout cuts one off mid-task
-and the work is lost, and without `timeout` a hung CLI is a process you wait on forever. Capture
-stderr: a CLI that cannot start — bad flag, missing credentials, rate limit — writes the reason
-there and leaves stdout empty. The contract commands are written bare and expect this wrapper.
+pair of files per dispatch — and run it in the background.** Dispatches run for minutes: a
+foreground tool timeout shorter than 1800 s kills the dispatch itself — no exit 124, no complete
+`$OUT` — and without `timeout` a hung CLI is a process you wait on forever. Capture stderr: a CLI
+that cannot start — bad flag, missing credentials, rate limit — writes the reason there; stdout is
+not necessarily empty, since Claude also reports the failure inside its JSON (`.is_error`) and
+Codex as a `turn.failed` event. The contract commands are written bare and expect this wrapper.
 
 ## What the dispatch may do
 
@@ -85,8 +94,10 @@ instruction rather than re-routing to another CLI.
   (drop it there) — restricts by tool set, not by flag. The contract has the set, the file-name
   rule and what a resume keeps.
 
-A resume is a new invocation: give it the same posture flags as the first dispatch. Kimi alone
-restores its agent on its own; Claude starts a resumed session under the cwd's defaults.
+A resume is a new invocation, and each CLI restores a different amount. Claude: every
+`--permission-mode`, `--allowedTools`, `--tools` and `--strict-mcp-config` again — a bare resume
+starts under the cwd's defaults. Codex: `--sandbox` again, before `resume`. Kimi: no `--agent` or
+`--agent-file` — they are rejected next to `-S`, and the agent bound at creation is restored.
 
 ## The brief
 
@@ -110,8 +121,9 @@ rather than start over, resume it by id.
 ## Reading the result
 
 Exit code first. `timeout` exits 124: the dispatch was cut off, not finished. Any other non-zero
-exit with no answer in `$OUT`: read the tail of `$ERR` — a credentials or rate-limit line there
-is a stop like a missing binary, and re-dispatching repeats it. Either way, a dispatch that could
+exit: read the contract's failure field in `$OUT` (Claude `.is_error` and `.terminal_reason`,
+Codex the `turn.failed` event), then the tail of `$ERR` — a credentials or rate-limit line in
+either is a stop like a missing binary, and re-dispatching repeats it. Either way, a dispatch that could
 write is not a clean restart — its exit code says nothing about how far it got — so look at
 `git status` in its cwd before re-running or resuming.
 
