@@ -12,7 +12,10 @@ child, from the live `spawn_agent` schema (the only authority for model names,
 efforts, and roles; it changes between Codex versions).
 
 1. **Delegate or not.** The tool's bar applies: a concrete, bounded subtask
-   that can run while the parent keeps working. Steps that are hard to undo —
+   that can run while the parent keeps working — plus the exception the
+   `explorer` role's own text makes: specific, well-scoped codebase questions
+   go to explorers instead of being read into the parent, even when nothing
+   runs in parallel. Steps that are hard to undo —
    publishing, payments, deletion, credentials, account or production
    changes — stay in the parent and run only after the user's explicit
    go-ahead; say so instead of treating the request as the go-ahead. A child
@@ -27,26 +30,27 @@ efforts, and roles; it changes between Codex versions).
 3. **`agent_type` only from roles the schema lists** — built-ins such as
    `explorer` (specific codebase questions and enumerations, parallelizable)
    and `worker` (bounded execution with explicit file ownership), plus
-   configured identities (`config.toml` `[agents.*]`, e.g. `researcher`,
-   `reviewer`). A listed role is not a free default: pass it only when its
-   description fits the child's job (a link audit is not research); no fit →
-   omit.
+   whatever identities the host's `config.toml` `[agents.*]` declares (none
+   is guaranteed to exist). A listed role is not a free default: pass it
+   only when its description fits the child's job (a link audit is not
+   research); no fit → omit, which is what `default` means — never pass
+   `default` explicitly.
 4. **`task_name`** (lowercase letters, digits, underscores) **and
    `fork_turns`.** Independent work: `"none"` — the child sees no parent
    history, so its brief must stand alone. Work continuing a recent discussion:
    a concrete positive integer string such as `"3"`, never a placeholder. Never
    leave `all` on a routed child; never omit or silently rewrite routed fields.
-   Leave `service_tier` unset unless the user asks for it.
 5. **Self-contained brief**: goal (overall plus the child's bounded subgoal);
    boundaries (may read, may write, must not touch — workers get explicit file
    ownership and "others are editing in parallel; do not revert their work");
-   a line that the user-level shared instruction slices and the agent's memory
-   files are already applied by the parent and must not be re-read by the
-   child — the brief carries the facts the child needs;
    acceptance (done-when, verification, what to do when information is
    missing); return shape with a length budget — conclusions plus file:line
-   coordinates, never pasted file bodies. Parallel children get disjoint files,
-   modules, or topics.
+   coordinates, never pasted file bodies. The child loads the runtime's own
+   instruction files (user and project `AGENTS.md`, memory) itself, like any
+   session: do not restate them and do not tell it to skip them; what the
+   brief carries is the task's facts — the parent's conversation and the
+   files it read are not there unless written in. Parallel children get
+   disjoint files, modules, or topics.
 6. **Recover**: a child that fails or returns noise gets one retry with a brief
    that names what went wrong; a second failure of the same kind means the work
    is not delegable as framed — take it back into the parent.
