@@ -1,16 +1,13 @@
 ---
 name: sync-agents-instructions
-description: Govern per-agent project instruction surfaces (CLAUDE.md, AGENTS.md) via a per-machine config. Use when asked to sync AGENTS.md/CLAUDE.md rules, add or update shared agent instructions, make surfaces independent, or deduplicate agent rules.
+description: Maintain shared agent rules and independent AGENTS.md / CLAUDE.md entry points using a machine topology config.
 ---
 
 # Sync Agents Instructions
 
-## Overview
-
-Govern agent instruction files across the projects of one machine. Every
-configured agent owns exactly one project instruction surface; a surface
-serves its declared owner and is never a wrapper, shortcut, or authority
-pointer for another agent's surface.
+Every configured agent owns its project instruction surface. Each surface
+serves that owner independently; it is never a wrapper, shortcut, or
+authority pointer for another owner's surface.
 
 Two actions, two scopes:
 
@@ -23,8 +20,7 @@ Two actions, two scopes:
 
 ## Machine topology comes from config
 
-This skill contains no machine-specific paths. Read the topology from the
-config the user names, or from
+Read topology from the config the user names, or from
 `$XDG_CONFIG_HOME/agent-instructions/sync-config.toml` (conventional config
 home when unset). If no config exists, stop and offer to create one — do not
 infer a topology from directory listings. See
@@ -54,8 +50,9 @@ Validate the config before acting: run `python3 scripts/validate_config.py
 the directory containing this SKILL.md elsewhere). It checks the schema
 above, rejects unknown keys, two agents or surfaces normalizing to the same
 owner, `readonly_project_surfaces` that name no other configured owner, and
-referenced files that do not exist. On any error, stop and ask instead of
-guessing.
+referenced files that do not exist. Then read only the entry files, shared
+sources, project surfaces, and direct references needed for the requested
+change; do not require a full read of every configured or referenced file.
 
 ## Isolation invariant
 
@@ -68,9 +65,7 @@ the source nor tells the owner to obtain instructions from it) is fine.
 Fix a violation by removing the cross-reference — never by making one project
 surface depend on a different one.
 
-## Placement Decision Model
-
-**Axis 1 — level.**
+## Placement
 
 1. Contains a project-specific atom (repo path, deployment gate, domain
    boundary, spec pointer) → the current owner's project surface.
@@ -84,8 +79,6 @@ surface depend on a different one.
    corroboration too, never proof on its own.
 4. Unsure → leave it local and flag it as a promotion candidate.
 
-**Axis 2 — vertical slice within the user level.**
-
 | Rule applies to | Destination | Load |
 | --- | --- | --- |
 | every task, any domain | behavior contract | `always` |
@@ -96,14 +89,6 @@ surface depend on a different one.
 Anti-fragmentation: a new slice needs one cohesive theme that an entry file
 can point at with a single trigger sentence; below that, use a named section
 of the nearest existing file.
-
-Size the natively loaded surface (entry + all `always` sources) by value, not
-by line count — lines are a poor proxy, since the same rule can be one long
-line or five short ones. Demote the least-used domain section to `on-demand`
-when any of these show up: the surface needs an index to stay readable; one
-rule has to be repeated in several places to make sense; a section only
-matters for a few task shapes yet loads every time; or an agent measurably
-starts missing the rules near the end.
 
 ## Removal rule
 
@@ -129,39 +114,33 @@ summary; ask only when the ambiguity changes what you would write.
 
 ## Workflow
 
-1. Read and validate the config. For **Add or update**, list only the
-   `[[agents]]` entry files and their load routes. For **Converge**, list the
-   surfaces in scope (glob candidates minus configured exclusions; skip
-   non-Git candidates with a stated reason) and note cross-owner references
-   found along the way.
+1. Read and validate the config. For **Add or update**, inspect only the
+   applicable `[[agents]]` entry files and load routes. For **Converge**,
+   enumerate the configured project surfaces in scope and note cross-owner
+   references; skip non-Git candidates with a stated reason.
 2. Classify each candidate rule: shared-covered / project-specific /
    parallel-project / unsure.
-3. Execute the plan directly — additions, isolation fixes, and removals of
-   project-local rules all proceed within the current request; report every
-   write with its diff, and every removal with its covering source and load
-   route. 🔴 Confirm first before editing a project surface Git cannot
-   restore — one that is untracked or gitignored has no second copy, so
-   state the exact edit and wait. Shared sources and entry files are
-   user-level files the request is about: write them directly, in or out of
-   Git. `off_limits` paths are never written, confirmed or not (see
-   Boundaries).
+3. Execute additions, isolation fixes, and covered removals within the user's
+   existing authorization. Tracked, untracked, or ignored status does not by
+   itself create a second confirmation requirement; preserve before/after
+   evidence when Git cannot restore the original. Ask only when a material
+   choice is missing or an action falls outside the authorized scope. Report
+   every write with its diff, and every removal with its covering source and
+   load route. Never write `off_limits` paths.
 4. Execute shared sources and entry load routes first, then project-local
    removals, re-checking that the recorded coverage still holds. Edit only
    the declared owner's surface; do not create missing surfaces.
-5. Validate: `git status --short` and `git diff -- <surface>` per repo;
-   commit a tracked surface with `git commit --only -- <surface>` (it rejects
-   untracked paths). An untracked, not-ignored surface is edited only after
-   the step 3 confirmation, reported as such and left unstaged — ask before
-   adding it to version control; a gitignored surface follows Boundaries.
-   Leave unrelated dirty paths untouched; confirm no cross-owner reference
-   was introduced.
+5. Validate each changed surface with status and content diff, including a
+   saved before/after comparison for files outside Git. Leave unrelated dirty
+   paths untouched and confirm no cross-owner reference was introduced.
+   Commit, push, or publish only when the request and active repository rules
+   authorize it.
 
 ## Boundaries
 
 - Managed or generated blocks (plugins, tools, generated sections) are
   opaque — do not interpret, reformat, or remove them.
-- Gitignored instruction files are governed too: same comparison, same
-  confirmation as any untracked surface, validated by content diff, reported
-  separately as local-only; never force-add or commit them.
+- Gitignored instruction files are governed too: validate them by content
+  diff and report them separately as local-only; never force-add them.
 - Never write `off_limits` paths, never edit another owner's surface as a
   shortcut, never hardcode discovered topology into this skill.

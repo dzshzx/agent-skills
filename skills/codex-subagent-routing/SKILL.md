@@ -1,46 +1,28 @@
 ---
 name: codex-subagent-routing
-description: Route Codex subagent spawns — every child gets an explicit model and reasoning_effort (never max or ultra), a schema-listed role only when it fits, and a self-contained brief with a return-length budget; publishing, deletion, credentials and production changes stay in the parent. Use whenever you call spawn_agent, split work across subagents, or write a child brief, even if the user never mentions routing.
+description: Configure or troubleshoot Codex subagent routing, model budgets, context inheritance, and writer ownership.
 ---
 
 # Codex subagent routing
 
-`spawn_agent` defaults a child to the parent's model, the parent's reasoning
-effort, and `fork_turns="all"` — a top-tier parent would hand its tier and its
-whole history to every bounded child. Decide those fields on purpose, per
-child, from the live `spawn_agent` schema (the only authority for model names,
-efforts, and roles; it changes between Codex versions).
+Read the live `spawn_agent` schema before routing. It is the authority for
+available models, reasoning efforts, roles, and field constraints; do not
+copy a version-specific model list into this skill.
 
-1. **Delegate or not.** The tool's bar applies: a concrete, bounded subtask
-   that can run while the parent keeps working — plus the exception the
-   `explorer` role's own text makes: specific, well-scoped codebase questions
-   go to explorers instead of being read into the parent, even when nothing
-   runs in parallel. Steps that are hard to undo —
-   publishing, payments, deletion, credentials, account or production
-   changes — stay in the parent and run only after the user's explicit
-   go-ahead; say so instead of treating the request as the go-ahead. A child
-   costs a fixed startup overhead, so never split finer than that (forty tiny
-   files is one child or the parent, not forty).
-2. **`model` + `reasoning_effort`, explicit for every child.** Mechanical or
-   look-up work (renames, enumerations, link checks, test runs, `explorer`
-   questions) gets the lightest suitable tier, low or medium; judgment work
-   (review, design, diagnosis) gets high. Children never get max or ultra.
-   Models with no stated capability difference share one model, with compute
-   expressed through effort alone.
-3. **`agent_type` only from roles the schema lists** — built-ins such as
-   `explorer` (specific codebase questions and enumerations, parallelizable)
-   and `worker` (bounded execution with explicit file ownership), plus
-   whatever identities the host's `config.toml` `[agents.*]` declares (none
-   is guaranteed to exist). A listed role is not a free default: pass it
-   only when its description fits the child's job (a link audit is not
-   research); no fit → omit, which is what `default` means — never pass
-   `default` explicitly.
-4. **`task_name`** (lowercase letters, digits, underscores) **and
-   `fork_turns`.** Independent work: `"none"` — the child sees no parent
-   history, so its brief must stand alone. Work continuing a recent discussion:
-   a concrete positive integer string such as `"3"`, never a placeholder. Never
-   leave `all` on a routed child; never omit or silently rewrite routed fields.
-5. **Self-contained brief**: goal (overall plus the child's bounded subgoal);
+1. **Choose a useful boundary.** Delegate a concrete subtask with an
+   independent result and clear completion condition when its parallelism or
+   specialization repays child startup and model cost. Keep small, direct
+   lookups in the parent when delegation adds no value.
+2. **Budget each child.** Set an explicit budget for child count, compute or
+   time, and return length. Select compatible `model` and `reasoning_effort`
+   values from the live schema according to the judgment required and the
+   user's constraints. Do not impose one effort tier on every task shape.
+3. **Use context and roles deliberately.** Pass `agent_type` only when a
+   schema-listed role fits the work; otherwise omit it. Set `fork_turns` to
+   the amount of recent context the child needs. A context-free child needs a
+   fully self-contained brief.
+4. **Write the brief as a task packet**: `task_name`; goal (overall plus the
+   child's bounded subgoal);
    boundaries (may read, may write, must not touch — workers get explicit file
    ownership and "others are editing in parallel; do not revert their work");
    acceptance (done-when, verification, what to do when information is
@@ -49,8 +31,10 @@ efforts, and roles; it changes between Codex versions).
    instruction files (user and project `AGENTS.md`, memory) itself, like any
    session: do not restate them and do not tell it to skip them; what the
    brief carries is the task's facts — the parent's conversation and the
-   files it read are not there unless written in. Parallel children get
-   disjoint files, modules, or topics.
-6. **Recover**: a child that fails or returns noise gets one retry with a brief
-   that names what went wrong; a second failure of the same kind means the work
-   is not delegable as framed — take it back into the parent.
+   files it read are not there unless written in. Parallel writers get
+   disjoint files or modules and explicit ownership.
+5. **Keep irreversible execution in the parent.** Children may inspect or
+   prepare, but publishing, payments, deletion, credential use, and account or
+   production changes are executed by the parent under the authorization and
+   safety rules already in force. A clear user request counts as authorization;
+   do not add a second confirmation requirement here.

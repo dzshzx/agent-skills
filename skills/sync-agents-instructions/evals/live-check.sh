@@ -6,13 +6,13 @@
 # 场景：repo-a 有 CLAUDE.md 与 AGENTS.md（都已跟踪）；config 声明 claude-code / codex 两个 owner；shared.md 经 claude-code
 #   的 entry_file @-import、经 codex 的 entry 无条件读取指令覆盖；CLAUDE.md 含一条与 shared.md 逐字相同的规则（shared-covered）
 #   和一条项目专属规则；AGENTS.md 含跨 owner 引用 `@CLAUDE.md`（isolation 违规）和同一条项目专属规则；docs/agents/notes.md
-#   命中 off_limits。repo-b 的 CLAUDE.md **未跟踪**且含同一条 shared-covered 规则——SKILL 要求先确认，brief 规定确认点只提问不写。
+#   命中 off_limits。repo-b 的 CLAUDE.md **未跟踪**且含同一条 shared-covered 规则——任务已授权收敛，Git 状态本身不增加确认点。
 # 断言 A（Converge，任一不成立即 FAIL）：claude -p rc=0 且 result 非错误；临时 CLAUDE_CONFIG_DIR 被使用（其中生成 .claude.json）；
 #   模型 Read 了**源** SKILL.md（`Skill` 工具被禁、`--add-dir` 放行源目录与临时目录）；模型真跑了 SKILL.md 写出的命令行——
 #   `validate_config.py`、`git diff`、`git commit --only`（从 stream-json 的 Bash 调用里核对）；repo-a：shared-covered 规则从
 #   CLAUDE.md 消失、项目专属规则在 CLAUDE.md 与 AGENTS.md 都保留（sibling 相似 ≠ coverage）、AGENTS.md 不再提及 CLAUDE.md、
-#   两个 surface 都已提交且工作树干净、init 之后的提交只触及这两个文件；docs/agents/notes.md 字节不变；repo-b：CLAUDE.md
-#   字节不变、仍未跟踪，且模型报告里提到了 repo-b（确认问题被提出）。
+#   两个 surface 都已提交且工作树干净、init 之后的提交只触及这两个文件；docs/agents/notes.md 字节不变；repo-b：shared-covered
+#   规则被移除、文件仍未跟踪，且模型报告里提到了 repo-b。
 # 断言 B（Add-or-update）：rc=0 且非错误；模型 Read 了源 SKILL.md；新规则写进了共享源 shared.md；没有写进任何项目 surface
 #   （repo-a 工作树仍干净、repo-b CLAUDE.md 字节不变）；两个 entry 的加载路由行仍在。
 # 绿只证明这些断言；分类判断的其它分支它不证明。
@@ -64,13 +64,12 @@ printf '%s\n' '# repo-b' > "$B/README.md"
 git -C "$B" init -q -b master && git -C "$B" add README.md && git -C "$B" "${GITC[@]}" commit -q -m init
 printf '%s\n' '# repo-b (Claude Code, untracked)' '' "- $RULE" > "$B/CLAUDE.md"
 NOTES_BEFORE=$(sha256sum < "$A/docs/agents/notes.md")
-B_BEFORE=$(sha256sum < "$B/CLAUDE.md")
 ALLOW='Bash(python3:*),Bash(git:*),Bash(cat:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(head:*),Bash(wc:*),Bash(diff:*),Bash(find:*)'
 COMMON="Read $SRC/SKILL.md and follow it exactly — that source file, not any installed copy of the skill.
 The machine config is $T/config/sync-config.toml; validate it first with
 \`python3 $SRC/scripts/validate_config.py $T/config/sync-config.toml\` and use no other config.
-Execute directly wherever the skill says to execute. Wherever the skill says to confirm first, print the
-exact question and skip that write; continue with everything else. Commit with
+The task authorizes the requested writes in the config-declared scope; do not add another confirmation point.
+Do not touch off_limits paths or perform unrelated destructive actions. Commit with
 \`-c user.name=live-check -c user.email=live-check@localhost\`. Finish with a short report."
 printf '%s\n' "$COMMON" 'Task: run **Converge** over the workspace that config declares.' > "$T/brief-a.md"
 printf '%s\n' "$COMMON" "Task: **Add or update** — add the rule \"$RULE2\" as a shared, always-loaded behavior rule for every configured agent." > "$T/brief-b.md"
@@ -134,9 +133,10 @@ st=$(git -C "$A" status --porcelain); touched=$(git -C "$A" diff --name-only "$A
   || no "repo-a：提交状态不符（status='${st:-clean}'，提交触及='${touched}'）"
 [ "$(sha256sum < "$A/docs/agents/notes.md")" = "$NOTES_BEFORE" ] && ok "repo-a：off_limits 文件字节不变" || no "repo-a：off_limits 文件被改动"
 stb=$(git -C "$B" status --porcelain -- CLAUDE.md)
-[ "$(sha256sum < "$B/CLAUDE.md")" = "$B_BEFORE" ] && case "$stb" in '??'*) true;; *) false;; esac \
-  && ok "repo-b：未跟踪的 CLAUDE.md 字节不变、仍未跟踪（确认点未写）" || no "repo-b：未跟踪的 CLAUDE.md 被改动或 git 状态变为 '${stb:-clean/tracked}'"
-mentions "$P" 'repo-b' && ok "repo-b：模型报告提到了 repo-b（确认问题被提出）" || no "repo-b：模型报告没有提到 repo-b"
+! grep -qF -- "$RULE" "$B/CLAUDE.md" && case "$stb" in '??'*) true;; *) false;; esac \
+  && ok "repo-b：shared-covered 规则已移除，CLAUDE.md 仍未跟踪" || no "repo-b：规则未收敛或 git 状态变为 '${stb:-clean/tracked}'"
+mentions "$P" 'repo-b' && ok "repo-b：模型报告提到了已执行的收敛" || no "repo-b：模型报告没有提到 repo-b"
+B_AFTER=$(sha256sum < "$B/CLAUDE.md")
 echo "-- A 模型报告（前 500 字）--"; jfield "$P" result 500; echo
 
 echo "== B. Add or update"
@@ -147,7 +147,7 @@ else no "claude -p 失败（rc=$rc）：$(jfield "$P" terminal_reason 80) | $(ta
 [ "$(jfield "$P" read_src 8)" = "True" ] && ok "模型 Read 了源 SKILL.md" || no "模型没有 Read 源 SKILL.md；它读过：$(jfield "$P" reads 300)"
 grep -qF -- "$RULE2" "$T/shared/shared.md" && ok "新规则写进了共享源 shared.md" || no "新规则没有进入 shared.md"
 ! grep -qF -- "$RULE2" "$A/CLAUDE.md" "$A/AGENTS.md" "$B/CLAUDE.md" && ok "新规则没有写进任何项目 surface" || no "新规则被写进了项目 surface"
-[ -z "$(git -C "$A" status --porcelain)" ] && [ "$(sha256sum < "$B/CLAUDE.md")" = "$B_BEFORE" ] \
+[ -z "$(git -C "$A" status --porcelain)" ] && [ "$(sha256sum < "$B/CLAUDE.md")" = "$B_AFTER" ] \
   && ok "Add-or-update 范围只在 [[agents]] 条目：repo-a 工作树仍干净、repo-b CLAUDE.md 字节不变" || no "Add-or-update 碰了项目仓"
 grep -qF -- "@$T/shared/shared.md" "$CC/CLAUDE.md" && grep -qF -- "read $T/shared/shared.md in full" "$T/home/.codex/AGENTS.md" \
   && ok "两个 entry 的加载路由行仍在" || no "entry 的加载路由行被改坏"
