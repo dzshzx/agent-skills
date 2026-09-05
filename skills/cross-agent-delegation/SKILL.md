@@ -83,8 +83,10 @@ vendors instruct their own review agents, and it is enough for ordinary delegati
 
 Restrict mechanically when the user asks for a locked-down run, or when a stray write would be
 expensive to notice. The three restrict differently, and the user's choice of delegate stands:
-when the named CLI cannot enforce what was asked, say so and dispatch with the brief-level
-instruction rather than re-routing to another CLI.
+when the named CLI cannot enforce the requested boundary, complete independent preparation
+and explain the unsupported restriction before dispatch. Ask for the missing alternative
+decision; a brief-level instruction is sufficient only when the user has not required a
+mechanical restriction. Keep the user's choice of delegate unless they authorize a change.
 
 - **Codex `--sandbox read-only`** — an OS sandbox: commands run, writes fail whatever issues them.
 - **Claude `--tools Read,Grep,Glob --strict-mcp-config`** — removes the built-in tools and every

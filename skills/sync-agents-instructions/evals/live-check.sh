@@ -8,8 +8,8 @@
 #   和一条项目专属规则；AGENTS.md 含跨 owner 引用 `@CLAUDE.md`（isolation 违规）和同一条项目专属规则；docs/agents/notes.md
 #   命中 off_limits。repo-b 的 CLAUDE.md **未跟踪**且含同一条 shared-covered 规则——任务已授权收敛，Git 状态本身不增加确认点。
 # 断言 A（Converge，任一不成立即 FAIL）：claude -p rc=0 且 result 非错误；临时 CLAUDE_CONFIG_DIR 被使用（其中生成 .claude.json）；
-#   模型 Read 了**源** SKILL.md（`Skill` 工具被禁、`--add-dir` 放行源目录与临时目录）；模型真跑了 SKILL.md 写出的命令行——
-#   `validate_config.py`、`git diff`、`git commit --only`（从 stream-json 的 Bash 调用里核对）；repo-a：shared-covered 规则从
+#   模型 Read 了**源** SKILL.md（`Skill` 工具被禁、`--add-dir` 放行源目录与临时目录）；模型真跑了
+#   `validate_config.py` 与 `git diff`（从 stream-json 的 Bash 调用里核对）；提交方式由执行方选择，结果范围在下文校验；repo-a：shared-covered 规则从
 #   CLAUDE.md 消失、项目专属规则在 CLAUDE.md 与 AGENTS.md 都保留（sibling 相似 ≠ coverage）、AGENTS.md 不再提及 CLAUDE.md、
 #   两个 surface 都已提交且工作树干净、init 之后的提交只触及这两个文件；docs/agents/notes.md 字节不变；repo-b：shared-covered
 #   规则被移除、文件仍未跟踪，且模型报告里提到了 repo-b。
@@ -120,7 +120,7 @@ if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then ok "claude
 else no "claude -p 失败（rc=$rc）：$(jfield "$P" terminal_reason 80) | $(tail -c 300 "$T/a.jsonl.err" | tr '\n' ' ')"; fi
 [ -f "$CC/.claude.json" ] && ok "隔离的 CLAUDE_CONFIG_DIR 被使用（生成了 .claude.json；本机用户级 CLAUDE.md/settings/hooks 未进入 run）" || no "CLAUDE_CONFIG_DIR 未被使用"
 [ "$(jfield "$P" read_src 8)" = "True" ] && ok "模型 Read 了源 SKILL.md（不是安装副本）" || no "模型没有 Read 源 SKILL.md；它读过：$(jfield "$P" reads 300)"
-for c in 'validate_config\.py' 'git(\s+-[cC]\s*\S+)*\s+diff\b' 'git(\s+-[cC]\s*\S+)*\s+commit\b[^\n]*--only'; do
+for c in 'validate_config\.py' 'git(\s+-[cC]\s*\S+)*\s+diff\b'; do
   ran "$P" "$c" && ok "SKILL.md 的命令行真跑过：$c" || no "SKILL.md 的命令行没跑：$c；git 调用：$(gitcmds "$P")"
 done
 grep -qF -- "$RULE" "$A/CLAUDE.md" && no "repo-a：shared-covered 规则仍留在 CLAUDE.md" || ok "repo-a：shared-covered 规则已从 CLAUDE.md 收敛"
