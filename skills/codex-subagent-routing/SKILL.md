@@ -13,8 +13,10 @@ copy a version-specific model list into this skill.
    independent result and clear completion condition when its parallelism or
    specialization repays child startup and model cost. Keep small, direct
    lookups in the parent when delegation adds no value.
-2. **Budget each child.** Set an explicit budget for child count, compute or
-   time, and return length. Select compatible `model` and `reasoning_effort`
+2. **Match resources to the task.** Follow the user's budget constraints;
+   make child count, time or return limits explicit when useful for the work.
+   A simple bounded subtask needs no fixed multi-category budget form.
+   Select compatible `model` and `reasoning_effort`
    values from the live schema according to the judgment required and the
    user's constraints, or inherit compatible parent settings. Full-history
    forks may require inheritance and forbid explicit overrides; follow the
@@ -28,7 +30,7 @@ copy a version-specific model list into this skill.
    boundaries (may read, may write, must not touch — workers get explicit file
    ownership and "others are editing in parallel; do not revert their work");
    acceptance (done-when, verification, what to do when information is
-   missing); return shape with a length budget — conclusions plus file:line
+   missing); concise return shape — conclusions plus file:line
    coordinates, never pasted file bodies. The child loads the runtime's own
    instruction files (user and project `AGENTS.md`, memory) itself, like any
    session: do not restate them and do not tell it to skip them; what the
@@ -36,7 +38,11 @@ copy a version-specific model list into this skill.
    context inheritance. Parallel writers get
    disjoint files or modules and explicit ownership.
 5. **Keep irreversible execution in the parent.** Children may inspect or
-   prepare, but publishing, payments, deletion, credential use, and account or
+   prepare, but publishing, payments, irreversible deletion, and account or
    production changes are executed by the parent under the authorization and
    safety rules already in force. A clear user request counts as authorization;
    do not add a second confirmation requirement here.
+   Judge credential-related work by allowed read scope, sensitive data exposure
+   and side effects. Authorized read-only access through an existing credential
+   mechanism can be delegated without exposing secret values; credential
+   rotation and permission changes remain in the parent.
