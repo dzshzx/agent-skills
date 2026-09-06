@@ -16,7 +16,9 @@ copy a version-specific model list into this skill.
 2. **Budget each child.** Set an explicit budget for child count, compute or
    time, and return length. Select compatible `model` and `reasoning_effort`
    values from the live schema according to the judgment required and the
-   user's constraints. Do not impose one effort tier on every task shape.
+   user's constraints, or inherit compatible parent settings. Full-history
+   forks may require inheritance and forbid explicit overrides; follow the
+   current schema's combination constraints.
 3. **Use context and roles deliberately.** Pass `agent_type` only when a
    schema-listed role fits the work; otherwise omit it. Set `fork_turns` to
    the amount of recent context the child needs. A context-free child needs a
@@ -30,8 +32,8 @@ copy a version-specific model list into this skill.
    coordinates, never pasted file bodies. The child loads the runtime's own
    instruction files (user and project `AGENTS.md`, memory) itself, like any
    session: do not restate them and do not tell it to skip them; what the
-   brief carries is the task's facts — the parent's conversation and the
-   files it read are not there unless written in. Parallel writers get
+   brief carries is the task's facts not already included by the selected
+   context inheritance. Parallel writers get
    disjoint files or modules and explicit ownership.
 5. **Keep irreversible execution in the parent.** Children may inspect or
    prepare, but publishing, payments, deletion, credential use, and account or
