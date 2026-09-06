@@ -27,6 +27,9 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
 - Treat a dispatch as successful only with exit 0, `turn.completed`, a nonempty final
   `item.completed/agent_message`, and no `turn.failed` or `error` event. A progress message
   or an absent output file does not prove successful completion or an OS write denial.
+  These establish CLI completion; apply the common [acceptance flow](../SKILL.md#accept-and-continue)
+  to the deliverable. Keep the full event stream in its file and read excerpts as needed for
+  failures or acceptance, rather than repeatedly loading it into the supervisor's context.
 - The API's safety layer can refuse a whole turn the same way: `turn.failed` with "flagged for
   possible cybersecurity risk", exit 1, stderr silent. Probe-like wording — `whoami`, "pwned",
   shell metacharacters presented as a test — trips it, and it is not deterministic: the same

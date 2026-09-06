@@ -14,6 +14,10 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
   `kimi -r <id>`; `-r` is absent from `--help` but resumes the same session (both forms recall
   earlier turns). A resumed session takes no `--agent`/`--agent-file`: the agent bound at
   creation is restored automatically, so a read-only dispatch resumes read-only.
+  Run from the explicit execution root and repeat `-p` and `--output-format stream-json`:
+  `kimi -S <session_id> -p "$(cat "$BRIEF")" --output-format stream-json`.
+  This differs from CLIs that require their tool policy on every invocation; do not add
+  creation-only agent flags to a Kimi resume.
 - `-p` takes the brief as its value; no `</dev/null` and no `--` needed — a first line starting
   with `-` or `---` arrives as text. An empty prompt is rejected (`Prompt cannot be empty`, exit
   1), as is a mistyped flag, both at parse time. A command line with no `-p` at all — `kimi -r <id>` alone — opens the
@@ -23,6 +27,8 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
 - Failure is the exit code. A rejected launch writes its reason to stderr, and stdout holds at
   most the `system.version` meta line — a consumer reading only stdout sees an empty stream
   rather than an error.
+  Extract the final answer and apply the common [acceptance flow](../SKILL.md#accept-and-continue);
+  process success alone does not establish that required work was completed.
 - **`-p` takes no permission flag at all.** `--auto`, `-y`, `--yolo` and `--plan` each abort
   the run with `Cannot combine --prompt with <flag>`. Headless is pinned to the `auto` posture
   and executes tool calls — writes included — with no approval gate.

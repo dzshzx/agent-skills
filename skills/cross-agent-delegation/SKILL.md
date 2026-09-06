@@ -5,9 +5,10 @@ description: Hand a task to a different vendor's coding agent CLI — Claude Cod
 
 # Cross-agent delegation
 
-Each of these CLIs is a process: prompt in, final text out. One dispatch costs you a single
-call and returns a finished result — the delegate's reading, commands, and reasoning never
-enter your context. Any of the three takes any kind of work — planning, implementing,
+Each of these CLIs is a process: a dispatch starts work, observation tracks it, and acceptance
+checks the delivered result. One CLI invocation may make many model requests; its detailed
+reading, commands, and reasoning stay in captured logs for selective inspection.
+Any of the three takes any kind of work — planning, implementing,
 reviewing, explaining — and which one goes is the user's call, made per dispatch.
 
 **You are one of them.** When the named delegate is the runtime you already are, do the work
@@ -20,7 +21,7 @@ answer and the continuation id sit in the output, and the failures that cost a r
 `evals/live-check.sh` holds the contracts to the installed CLIs: doubt a line when that script
 goes red, not when a version number moves.
 
-## Before dispatch
+## Prepare the handoff
 
 Run `command -v <cli>` for the CLI you were named. A spawned shell may not carry your PATH, and
 not every machine has all three. A missing binary is a stop, not a workaround.
@@ -35,6 +36,14 @@ host project's rules call for one; follow those rules rather than inventing isol
 the decisions already made. It does load its own user and project instruction files, hooks,
 skills, MCP servers, credentials and saved sessions for that cwd — it arrives configured like the
 user's own session in that CLI, and whatever that layer allows or forbids applies to the dispatch.
+
+The brief includes the goal, execution root, allowed modification scope, acceptance criteria,
+evidence locations, and return format with a length budget. Ask the delegate to do its assigned
+work itself rather than delegate onward. A simple task needs only a short paragraph; for a
+complex task, map deliverables to individual acceptance criteria. Check required inputs,
+output directories, and tool permissions before launch, using the authorization already in
+force. Diagnose the specific missing permission before changing the invocation; difficulty
+enumerating commands does not authorize broader permissions.
 
 **Write the brief to a file; never interpolate it into the command string.** A brief carries
 newlines, quotes, backticks and `$(...)`, all of which the shell executes or mangles before the
@@ -62,9 +71,10 @@ check), and one argv entry is capped at 128 KiB on Linux — a brief that inline
 log fails with `Argument list too long` before the CLI starts; point the delegate at the file
 instead.
 
-**Wrap every dispatch, first or resumed, as `timeout 1800 <command> >"$OUT" 2>"$ERR"` — a fresh
-pair of files per dispatch — and run it in the background.** Dispatches run for minutes: a
-foreground tool timeout shorter than 1800 s kills the dispatch itself — no exit 124, no complete
+**Bound every dispatch, first or resumed, and capture a fresh pair of output files**, for
+example `timeout 1800 <command> >"$OUT" 2>"$ERR"`; use the task's agreed timeout when specified.
+Run through the host's existing background execution facility. Dispatches run for minutes: a
+foreground tool timeout shorter than the dispatch limit can kill the dispatch itself — no exit 124, no complete
 `$OUT` — and without `timeout` a hung CLI is a process you wait on forever. Capture stderr: a CLI
 that cannot start — bad flag, missing credentials, rate limit — writes the reason there; stdout is
 not necessarily empty, since Claude also reports the failure inside its JSON (`.is_error`) and
@@ -72,14 +82,10 @@ Codex as a `turn.failed` event. The contract commands are written bare and expec
 
 ## What the dispatch may do
 
-Send it with the working permissions the task needs — the posture you would take yourself for
-that piece of work. Codex `--sandbox workspace-write`. Kimi as it comes — `-p` takes no
-permission flag and has no gate. Claude `--permission-mode acceptEdits` for the edits, plus the
-commands the task runs: `-p` cannot prompt, so a command outside the cwd's allow rules is denied
-and logged, not asked — `--allowedTools 'Bash(<cmd>:*)'` for the commands the brief names,
-`--permission-mode bypassPermissions` when they cannot be enumerated (Kimi's no-gate posture; use
-it in a worktree). When you want a report rather than edits, say so in the brief; that is how the
-vendors instruct their own review agents, and it is enough for ordinary delegations.
+Send it with the working permissions the task needs and existing authorization permits. Use
+the named CLI's reference for directory access, command permissions, and tool restrictions.
+When you want a report rather than edits, say so in the brief; that is enough for ordinary
+delegations.
 
 Restrict mechanically when the user asks for a locked-down run, or when a stray write would be
 expensive to notice. The three restrict differently, and the user's choice of delegate stands:
@@ -99,22 +105,61 @@ mechanical restriction. Keep the user's choice of delegate unless they authorize
   (drop it there) — restricts by tool set, not by flag. The contract has the set, the file-name
   rule and what a resume keeps.
 
-A resume is a new invocation, and each CLI restores a different amount. Claude: every
-`--permission-mode`, `--allowedTools`, `--tools` and `--strict-mcp-config` again — a bare resume
-starts under the cwd's defaults. Codex: `--sandbox` again, before `resume`. Kimi: no `--agent` or
-`--agent-file` — they are rejected next to `-S`, and the agent bound at creation is restored.
+## Observe execution
 
-## The brief
+Keep a compact task summary, acceptance checklist, current checkpoint, and evidence index in
+the supervisor's working context. Detailed logs stay in the task artifact directory; read
+relevant excerpts when diagnosing an anomaly or checking a deliverable. Prefer the host's
+completion notifications. If polling is needed, reuse the same run identifier and read a short
+status; follow the host's user-update requirements rather than a skill-wide polling interval.
+Update the summary on phase changes, blockers, or delivery. A quiet log alone does not show a
+stalled task and is not a reason to restart it.
 
-Everything the delegate needs travels in the brief:
+Intervene when the delegate reports a blocker, there is clear scope drift, an agreed checkpoint
+is reached, or an assessable result is delivered. Ordinary tasks default to acceptance after
+full delivery; complex tasks may warrant an earlier check when a key contract is settled.
+Inspect unfinished code deeply only to investigate a specific risk. Independent acceptance
+preparation may run alongside execution with clear ownership; avoid implementing the same
+feature or running the same checks twice.
 
-- the goal, and the bounded piece this delegate owns
-- the exact file or directory scope it may touch
-- acceptance criteria, so it can tell done from not-done
-- the return format and a length budget
-- that it performs the task itself rather than delegating onward
+These are optional, trimmable handoff notes, not a schema or a requirement for a status file:
 
-## Chaining dispatches
+| Information | Example contents |
+| --- | --- |
+| Status | Running, blocked, awaiting acceptance, or accepted complete; note process failure or interruption and its cause separately |
+| Checkpoint | Current commit, input version, or identifiable artifact |
+| Progress | Completed and remaining work |
+| Action needed | Specific blocker or decision for the supervisor |
+| Evidence | Result, check output, and relevant log locations |
+| Continuation | Host task identifier and CLI session ID, when available |
+
+Delivery means **awaiting acceptance**; only the supervisor's completed checks establish
+**accepted complete**.
+
+## Accept and continue
+
+Check the process exit and the CLI's failure fields first, even when the exit is zero; use the
+named reference to extract the final answer and continuation ID. Then check the task's
+acceptance criteria. Successful process exit, the delegate's completion claim, and task
+acceptance are separate judgments. When permission denials appear, identify affected steps
+and inspect subsequent evidence: if a required step remains incomplete, mark it blocked
+regardless of successful wording.
+
+For work that can write, inspect scope with `git status` and `git diff` in the execution root
+and verify the actual artifacts. Tie check evidence to a commit, file version, or input
+snapshot; without Git, use explicit input and output identifiers. Rerun affected checks when
+code, inputs, environment, or key assumptions change; reuse unaffected evidence.
+
+Consolidate confirmed findings into one repair handoff and prefer resuming the original
+session. A resume is a new invocation: explicitly restore the directory, permission, and
+output parameters required by that CLI's reference, including its exceptions for restored
+agent settings. Preserve a fresh output pair for each invocation.
+
+`timeout` exit 124 means interrupted work, not completion. For other nonzero exits, inspect
+the CLI failure fields and relevant stderr. Missing credentials or rate limits require
+resolution before another dispatch. After any timeout or interruption, inspect partial changes
+and evidence before continuing. If the session cannot resume, hand over the checkpoint and
+remaining work to a new session rather than restarting blindly.
 
 One invocation per task the user named — each reloads the delegate's whole instruction layer and
 may take many model turns — split only where a later dispatch would restart from a saved result.
@@ -123,17 +168,9 @@ own context. That file is at once the next dispatch's input and the point you re
 failure re-runs one dispatch instead of everything before it. When a dispatch should continue
 rather than start over, resume it by id.
 
-## Reading the result
-
-Exit code first. `timeout` exits 124: the dispatch was cut off, not finished. Any other non-zero
-exit: read the contract's failure field in `$OUT` (Claude `.is_error` and `.terminal_reason`,
-Codex the `turn.failed` event), then the tail of `$ERR` — a credentials or rate-limit line in
-either is a stop like a missing binary, and re-dispatching repeats it. Either way, a dispatch that could
-write is not a clean restart — its exit code says nothing about how far it got — so look at
-`git status` in its cwd before re-running or resuming.
-
-A dispatch is done when its answer — the field the contract points at — is in your hands and
-checked against the brief's acceptance criteria, and, for a dispatch that could write,
-`git status` and `git diff` in its cwd show changes inside the brief's scope only and none of
-your scratch files. The delegate's prose says what it believes it did; the diff says what it
-did. The answer is what reaches the user; the event stream stays in its file.
+When evaluating supervision cost on an actual task, record supervisor request count, input
+size, cached input, output, repair rounds, and acceptance once at completion. Reuse available
+stage totals; do not wake models just to collect metrics. Keep CLI invocation counts separate
+from internal model requests, and report unavailable metrics as unavailable. These observations
+are improvement evidence, not a per-task reporting gate, a promised saving, or a conversion
+from tokens to subscription quota.

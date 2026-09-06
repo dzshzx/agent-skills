@@ -51,7 +51,7 @@ for c in claude codex kimi; do selected "$c" && printf '  %s %s\n' "$c" "$("$c" 
 if selected claude; then
 echo "== Claude：flag 面"
 H=$(claude --help 2>&1)
-for f in " -p, --print" "--output-format" "--permission-mode" "--allowedTools" "--tools" "--resume" "--strict-mcp-config"; do
+for f in " -p, --print" "--output-format" "--permission-mode" "--allowedTools" "--add-dir" "--tools" "--resume" "--strict-mcp-config"; do
   has "$f" "$H" && ok "claude --help 有 $f" || no "claude --help 缺 $f"
 done
 for m in dontAsk acceptEdits bypassPermissions; do
