@@ -14,9 +14,9 @@ Two actions, two scopes:
 - **Add or update:** put a reusable rule in a shared user-level source and
   wire it through each applicable owner's `entry_file` load route. Scope is
   the `[[agents]]` entries only — do not enumerate `project_globs`.
-- **Converge:** enumerate the project surfaces under `project_globs` and
-  remove a project-local copy only when that *same owner* demonstrably
-  receives it from a shared source.
+- **Converge:** enumerate project surfaces under `project_globs`; remove
+  valid duplicates with same-owner shared coverage, or delete rules the user
+  has explicitly retired within the authorized scope.
 
 ## Machine topology comes from config
 
@@ -72,11 +72,11 @@ surface depend on a different one.
 2. Is project workflow or executable convention (how to test/branch/release)
    → the project's own workflow docs (the files `off_limits` names); report
    it, never absorb it.
-3. Holds across two or more projects with no project atoms → user level.
-   Promote when the rule is stated without project atoms and would apply
-   unchanged to any repo on this machine — a second sighting corroborates
-   that, it is not a precondition. Similar wording in another project is
-   corroboration too, never proof on its own.
+3. Is an active user-specific constraint with no project atoms → user level.
+   Generic tutorials, engineering advice and project encyclopedias are not
+   promotion candidates merely because they appear in multiple projects.
+   Keep useful project knowledge in its existing documentation, linked only
+   for the task that needs it; do not recreate a mandatory reading chain.
 4. Unsure → leave it local and flag it as a promotion candidate.
 
 | Rule applies to | Destination | Load |
@@ -92,7 +92,11 @@ of the nearest existing file.
 
 ## Removal rule
 
-Remove a project-local rule only when all three hold **for the same owner**:
+For an explicitly retired rule, record the user's retirement decision and
+the affected diff; no equivalent shared rule is required. Do not re-home the
+retired rule in another file. Preserve still-valid project safety boundaries.
+
+For a still-valid duplicate, remove it only when all three hold **for the same owner**:
 
 1. A configured shared source carries all of its meaning.
 2. That owner's entry file verifiably loads that source — native expansion,
@@ -106,8 +110,8 @@ When another configured agent lists this surface in
 `readonly_project_surfaces`, the same three checks must also pass through
 that reader's own entry load route; a rule covered only for the owner stays.
 
-Report every removal in the execution report with its covering source, load
-route, and diff. Similar wording in another project's surface is promotion
+Report each duplicate removal with its covering source, load route and diff;
+report retired rules with their retirement basis and diff. Similar wording in another project's surface is promotion
 evidence, never removal evidence.
 When coverage is partial or unclear, keep the rule and note it in the
 summary; ask only when the ambiguity changes what you would write.
@@ -118,15 +122,15 @@ summary; ask only when the ambiguity changes what you would write.
    applicable `[[agents]]` entry files and load routes. For **Converge**,
    enumerate the configured project surfaces in scope and note cross-owner
    references; skip non-Git candidates with a stated reason.
-2. Classify each candidate rule: shared-covered / project-specific /
-   parallel-project / unsure.
-3. Execute additions, isolation fixes, and covered removals within the user's
+2. Classify each candidate rule: explicitly-retired / shared-covered /
+   project-specific / generic-advice / unsure.
+3. Execute additions, isolation fixes, authorized retirements and covered removals within the user's
    existing authorization. Tracked, untracked, or ignored status does not by
    itself create a second confirmation requirement; preserve before/after
    evidence when Git cannot restore the original. Ask only when a material
    choice is missing or an action falls outside the authorized scope. Report
-   every write with its diff, and every removal with its covering source and
-   load route. Never write `off_limits` paths.
+   every write with its diff and each removal with its retirement basis or
+   covering source and load route. Never write `off_limits` paths.
 4. Execute shared sources and entry load routes first, then project-local
    removals, re-checking that the recorded coverage still holds. Edit only
    the declared owner's surface; do not create missing surfaces.

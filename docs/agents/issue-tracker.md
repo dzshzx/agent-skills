@@ -1,22 +1,3 @@
-# Issue tracker: GitHub
+# 项目任务跟踪
 
-Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
-
-The six-status vocabulary lives in `~/.config/agent-instructions/agent-workfiles.md`, section 「Agent 工作文件」. GitHub uses open + same-name label for non-terminal states, closed for `resolved`, and closed + `wontfix` for `wontfix`. Non-terminal issues record the next step and its owner or unlock condition.
-
-## Conventions
-
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
-- **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
-- **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
-- **Close**: `gh issue close <number> --comment "..."`
-
-Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
-
-## Pull requests as a triage surface
-
-External PRs are not a feature-request surface for this tracker.
-
-GitHub shares one number space across issues and PRs, so a bare `#42` may be either — resolve with `gh pr view 42` and fall back to `gh issue view 42`.
+本仓使用 GitHub Issues（`dzshzx/agent-skills`），通过 gh CLI 操作；外部 PR 不作 feature-request 面。引用裸编号时先辨别 issue 或 PR。
