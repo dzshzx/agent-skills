@@ -24,11 +24,8 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
 | [`cross-agent-delegation`](skills/cross-agent-delegation/SKILL.md) | Hands user-named work to a different vendor's CLI (Claude Code, Codex, Kimi Code) as a headless subprocess. A shared handoff, observation, acceptance, and continuation flow uses host background facilities and compact checkpoints; `references/` owns each CLI's directory, permission, result, and resume parameters. Ships `evals/live-check.sh`: a fail-closed default tier for flags and parse-level rejections without model calls, plus `--smoke` for result, resume, and permission behavior. |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Syncs shared rules and independent per-agent project instruction surfaces. Each configured agent owns one project file; a local rule is removed only when the same owner receives full coverage from a shared source, and one owner's surface never becomes another's authority. Machine topology comes from a per-machine config (`references/config-example.toml`); validation reads only files needed for the requested change and writes follow the authorization already in force. |
 
-`refactor-batch-landing` was removed on 2026-08-06. It only orchestrated the
-Matt Pocock skills family (`codebase-design`, `implement`, `tdd`,
-`code-review`, `to-spec`, `to-tickets`, `grill-with-docs`), which is installed
-separately via the skills CLI and is not part of this repo; the orchestrator
-had no execution surface of its own. Recover it from git history if needed.
+`refactor-batch-landing` was removed on 2026-08-06. The orchestrator had no
+execution surface of its own. Recover it from git history if needed.
 
 ## Design rules
 
