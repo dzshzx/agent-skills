@@ -55,19 +55,34 @@ Choose verification according to the change:
 scripts/verify.sh --no-live # mechanical gate; enough for descriptions, routing metadata, and docs
 scripts/verify.sh           # mechanical gate + live checks for changed skills when behavior needs them
 scripts/verify.sh --all     # live checks for every skill, e.g. after an allowed CLI-upgrade check
+bash skills/cross-agent-delegation/evals/live-check.sh --cli codex --smoke # targeted Codex contracts
 ```
 
 The mechanical gate is `python scripts/validate_repository.py`,
 `shellcheck -S warning skills/*/evals/*.sh scripts/*.sh`,
 `bash skills/sync-agents-instructions/evals/check.sh` and
+`bash scripts/check-offline.sh` (entrypoint, validator, event-log and scope
+regressions with fixtures and fake CLIs), plus
 `bash scripts/check-commit-subjects.sh` (every commit subject in the pushed
 range is `type(scope): subject`, e.g. `fix(<skill>): …`; a bare `<skill>: …`
 prefix fails); CI runs exactly those.
+`--no-live` disables live calls regardless of argument order. `--all` and
+explicit skill names are mutually exclusive (usage error, exit 2).
 Live checks (`skills/<name>/evals/live-check.sh`, one per skill, enforced by
 the validator) make real, billed CLI calls and need the CLIs and credentials
 on the machine, so they run locally when the changed command, script, or
 runtime behavior warrants them. If the user forbids a live flow, skip it and
 state the resulting verification limit.
+
+The routing check embeds the source skill in each recorded input and checks
+explicit parameters or inherited parent settings against child rollouts. The
+irreversible-command assertion supports a finite shell grammar; unsupported
+dynamic commands fail as unverifiable, even when no mutation is observed. The
+sync check compares each stage's file inventory, hashes and Git history.
+Codex smoke checks require successful termination and a final answer; file
+absence and an observed OS sandbox denial are separate assertions. Live
+checks retain their diagnostic evidence and print its location; temporary
+credential copies are removed on exit.
 
 Then push the candidate, wait for CI on its exact SHA, and tag that commit:
 
