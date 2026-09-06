@@ -119,7 +119,7 @@ class Checker:
             for key in ("role", "domain"):
                 if key in entry:
                     self.string(f"{where}.{key}", entry[key])
-            if "load" in entry and entry["load"] not in LOAD_MODES:
+            if "load" in entry and (not isinstance(entry["load"], str) or entry["load"] not in LOAD_MODES):
                 self.error(f"{where}.load", f"must be one of {sorted(LOAD_MODES)}")
             path = self.string(f"{where}.path", entry.get("path")) if "path" in entry else None
             if path is None:
@@ -157,7 +157,7 @@ class Checker:
                     if owner in owners:
                         self.error(f"{where}.project_instruction_file", f"normalizes to the same owner as {owners[owner]}")
                     owners[owner] = where
-            if "always_load_mode" in entry and entry["always_load_mode"] not in ALWAYS_LOAD_MODES:
+            if "always_load_mode" in entry and (not isinstance(entry["always_load_mode"], str) or entry["always_load_mode"] not in ALWAYS_LOAD_MODES):
                 self.error(f"{where}.always_load_mode", f"must be one of {sorted(ALWAYS_LOAD_MODES)}")
             if "agent_specific_file" in entry and (specific := self.string(f"{where}.agent_specific_file", entry["agent_specific_file"])):
                 self.file_exists(f"{where}.agent_specific_file", specific)
@@ -200,7 +200,7 @@ class Checker:
             self.error(field, "must name a file, not a directory")
             return None
         normalized = normalize_repo_path(surface)
-        if normalized == "." or normalized.startswith("../"):
+        if normalized in {".", ".."} or normalized.startswith("../"):
             self.error(field, "must stay inside the repository")
             return None
         return normalized

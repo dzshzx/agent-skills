@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 真实 harness 验证：在临时 workspace 里让 Claude Code 按**源** SKILL.md 跑一次 Converge 和一次 Add-or-update，断言文件级结果。
-# 用法：bash evals/live-check.sh   （计费：2 次 claude -p 真跑，约 3–8 分钟；全部落在 mktemp 目录，结束即删）
+# 用法：bash evals/live-check.sh   （计费：2 次 claude -p 真跑；证据保留在打印的临时目录，临时凭据结束即删）
 # 隔离：CLAUDE_CONFIG_DIR 指向临时目录（只复制 ~/.claude/.credentials.json 进去），所以本机真实的用户级 CLAUDE.md、
 #   settings、hooks、MCP 都不进被测 run；config 里 claude-code 的 entry_file 就是该临时目录的 CLAUDE.md——它确实被加载。
 # 场景：repo-a 有 CLAUDE.md 与 AGENTS.md（都已跟踪）；config 声明 claude-code / codex 两个 owner；shared.md 经 claude-code
@@ -14,14 +14,16 @@
 #   两个 surface 都已提交且工作树干净、init 之后的提交只触及这两个文件；docs/agents/notes.md 字节不变；repo-b：shared-covered
 #   规则被移除、文件仍未跟踪，且模型报告里提到了 repo-b。
 # 断言 B（Add-or-update）：rc=0 且非错误；模型 Read 了源 SKILL.md；新规则写进了共享源 shared.md；没有写进任何项目 surface
-#   （repo-a 工作树仍干净、repo-b CLAUDE.md 字节不变）；两个 entry 的加载路由行仍在。
+#   （两仓的文件清单、内容哈希、HEAD、Git 状态均等于该阶段基线）；两个 entry 的加载路由行仍在。
+#   Converge 逐提交核对路径，提交后再撤销也不能隐藏越界；各阶段保护项目中其余文件。
 # 绿只证明这些断言；分类判断的其它分支它不证明。
 set -u
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 command -v claude >/dev/null 2>&1 || { echo "缺少 claude，无法检测"; exit 2; }
 CRED="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
 [ -f "$CRED" ] || { echo "缺少 $CRED，无法在隔离的 CLAUDE_CONFIG_DIR 里认证"; exit 2; }
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
+T=$(mktemp -d); trap 'rm -rf "$T/cc"; echo "Evidence: $T"' EXIT
+echo "Evidence: $T"
 CC="$T/cc"; A="$T/ws/repo-a"; B="$T/ws/repo-b"
 mkdir -p "$CC" "$T/home/.codex" "$T/shared" "$T/config" "$A/docs/agents" "$B"
 cp "$CRED" "$CC/"
@@ -64,6 +66,11 @@ printf '%s\n' '# repo-b' > "$B/README.md"
 git -C "$B" init -q -b master && git -C "$B" add README.md && git -C "$B" "${GITC[@]}" commit -q -m init
 printf '%s\n' '# repo-b (Claude Code, untracked)' '' "- $RULE" > "$B/CLAUDE.md"
 NOTES_BEFORE=$(sha256sum < "$A/docs/agents/notes.md")
+SCOPE="$SRC/evals/scope_evidence.py"
+python3 "$SCOPE" snapshot "$A" "$T/converge-a-before.json" || exit 2
+python3 "$SCOPE" snapshot "$B" "$T/converge-b-before.json" || exit 2
+sha256sum "$SRC/SKILL.md" > "$T/source.sha256"
+cp "$SRC/SKILL.md" "$T/source-skill.md"
 ALLOW='Bash(python3:*),Bash(git:*),Bash(cat:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(head:*),Bash(wc:*),Bash(diff:*),Bash(find:*)'
 COMMON="Read $SRC/SKILL.md and follow it exactly — that source file, not any installed copy of the skill.
 The machine config is $T/config/sync-config.toml; validate it first with
@@ -115,6 +122,7 @@ mentions(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exi
 
 echo "== A. Converge"
 dispatch "$T/brief-a.md" "$T/a.jsonl"; rc=$?
+printf '%s\n' "$rc" > "$T/a.rc"
 parse "$T/a.jsonl" "$T/a.json"; P="$T/a.json"
 if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then ok "claude -p 运行成功（rc=0，result.is_error=false）"
 else no "claude -p 失败（rc=$rc）：$(jfield "$P" terminal_reason 80) | $(tail -c 300 "$T/a.jsonl.err" | tr '\n' ' ')"; fi
@@ -128,6 +136,10 @@ grep -qF -- "$PROJ" "$A/CLAUDE.md" && ok "repo-a：项目专属规则保留在 C
 grep -qF -- "$PROJ" "$A/AGENTS.md" && ok "repo-a：项目专属规则保留在 AGENTS.md（sibling 相似 ≠ coverage）" || no "repo-a：项目专属规则从 AGENTS.md 被误删"
 grep -q 'CLAUDE.md' "$A/AGENTS.md" && no "repo-a：AGENTS.md 仍提及 CLAUDE.md（跨 owner 引用未清）" || ok "repo-a：AGENTS.md 的跨 owner 引用已移除"
 st=$(git -C "$A" status --porcelain); touched=$(git -C "$A" diff --name-only "$A_INIT" HEAD | sort | tr '\n' ' ')
+python3 "$SCOPE" check "$A" "$T/converge-a-before.json" --allow AGENTS.md --allow CLAUDE.md \
+  && ok "Converge repo-a：保护文件清单/内容及逐提交路径符合范围" || no "Converge repo-a：检测到越界"
+python3 "$SCOPE" check "$B" "$T/converge-b-before.json" --allow CLAUDE.md \
+  && ok "Converge repo-b：保护文件清单/内容及逐提交路径符合范围" || no "Converge repo-b：检测到越界"
 [ -z "$st" ] && [ "$touched" = "AGENTS.md CLAUDE.md " ] \
   && ok "repo-a：两个 surface 都已提交、工作树干净、init 之后的提交只触及 AGENTS.md CLAUDE.md" \
   || no "repo-a：提交状态不符（status='${st:-clean}'，提交触及='${touched}'）"
@@ -136,19 +148,21 @@ stb=$(git -C "$B" status --porcelain -- CLAUDE.md)
 ! grep -qF -- "$RULE" "$B/CLAUDE.md" && case "$stb" in '??'*) true;; *) false;; esac \
   && ok "repo-b：shared-covered 规则已移除，CLAUDE.md 仍未跟踪" || no "repo-b：规则未收敛或 git 状态变为 '${stb:-clean/tracked}'"
 mentions "$P" 'repo-b' && ok "repo-b：模型报告提到了已执行的收敛" || no "repo-b：模型报告没有提到 repo-b"
-B_AFTER=$(sha256sum < "$B/CLAUDE.md")
 echo "-- A 模型报告（前 500 字）--"; jfield "$P" result 500; echo
 
 echo "== B. Add or update"
+python3 "$SCOPE" snapshot "$A" "$T/add-a-before.json" || exit 2
+python3 "$SCOPE" snapshot "$B" "$T/add-b-before.json" || exit 2
 dispatch "$T/brief-b.md" "$T/b.jsonl"; rc=$?
+printf '%s\n' "$rc" > "$T/b.rc"
 parse "$T/b.jsonl" "$T/b.json"; P="$T/b.json"
 if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then ok "claude -p 运行成功（rc=0，result.is_error=false）"
 else no "claude -p 失败（rc=$rc）：$(jfield "$P" terminal_reason 80) | $(tail -c 300 "$T/b.jsonl.err" | tr '\n' ' ')"; fi
 [ "$(jfield "$P" read_src 8)" = "True" ] && ok "模型 Read 了源 SKILL.md" || no "模型没有 Read 源 SKILL.md；它读过：$(jfield "$P" reads 300)"
 grep -qF -- "$RULE2" "$T/shared/shared.md" && ok "新规则写进了共享源 shared.md" || no "新规则没有进入 shared.md"
 ! grep -qF -- "$RULE2" "$A/CLAUDE.md" "$A/AGENTS.md" "$B/CLAUDE.md" && ok "新规则没有写进任何项目 surface" || no "新规则被写进了项目 surface"
-[ -z "$(git -C "$A" status --porcelain)" ] && [ "$(sha256sum < "$B/CLAUDE.md")" = "$B_AFTER" ] \
-  && ok "Add-or-update 范围只在 [[agents]] 条目：repo-a 工作树仍干净、repo-b CLAUDE.md 字节不变" || no "Add-or-update 碰了项目仓"
+python3 "$SCOPE" check "$A" "$T/add-a-before.json" && python3 "$SCOPE" check "$B" "$T/add-b-before.json" \
+  && ok "Add-or-update：两个项目仓的文件清单、内容、HEAD 和 Git 状态均未改变" || no "Add-or-update 碰了项目仓"
 grep -qF -- "@$T/shared/shared.md" "$CC/CLAUDE.md" && grep -qF -- "read $T/shared/shared.md in full" "$T/home/.codex/AGENTS.md" \
   && ok "两个 entry 的加载路由行仍在" || no "entry 的加载路由行被改坏"
 echo "-- B 模型报告（前 400 字）--"; jfield "$P" result 400; echo
