@@ -37,6 +37,9 @@ jobs:
       - name: Check the sync-agents-instructions config validator against its fixtures
         run: bash skills/sync-agents-instructions/evals/check.sh
 
+      - name: Check deterministic regressions without model calls
+        run: bash scripts/check-offline.sh
+
       - name: Check commit subjects follow type(scope) subject
         env:
           EVENT: ${{ github.event_name }}
