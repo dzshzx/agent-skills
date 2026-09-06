@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 回归检测：核对 SKILL.md 与 references/*.md 缓存的三家 CLI 契约是否仍与本机实装一致。
-# 用法：bash evals/live-check.sh [--smoke]
+# 用法：bash evals/live-check.sh [--smoke] [--cli claude|codex|kimi|all]
+# Codex 成功须 rc=0、turn.completed、非空最终答复且无失败事件；只读文件未产生与 OS 拒写分开断言。
 #   默认档（surface + parser）：--help 是否仍列出所用 flag；参数解析层的拒绝/放行是否仍成立——`--` 之后以 `-` 开头的 brief
 #     过解析而没有 `--` 时被拒、空 prompt 的三家行为、启动失败写在 stdout 还是 stderr、契约里每种命令形态（exec / resume /
 #     review）可解析、`--permission-mode` 的 choices 含 bypassPermissions、Kimi 内置 agent explore 仍在、单个 argv 128 KiB 上限。
@@ -14,12 +15,25 @@
 #     brief 或自定义 model_instructions_file 的措辞都可能触发）时按契约重新派发，最多两次；仍拒才交给断言。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
 set -u
+CLI=all; SMOKE=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --smoke) SMOKE=1; shift ;;
+    --cli) [ "$#" -ge 2 ] || { echo '--cli requires a value' >&2; exit 2; }; CLI=$2; shift 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+case "$CLI" in claude|codex|kimi|all) ;; *) echo "Invalid CLI: $CLI" >&2; exit 2 ;; esac
+selected(){ [ "$CLI" = all ] || [ "$CLI" = "$1" ]; }
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
 no(){ FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; [ -s "${E:-}" ] && printf '       stderr: %s\n' "$(tail -c 200 "$E" | tr '\n' ' ')"; }
 has(){ printf '%s' "$2" | grep -qF -- "$1"; }
-T=300                                   # 单次真跑上限（秒）
-W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
+T=${LIVE_CHECK_TIMEOUT:-300}             # 单次真跑上限（秒）
+W=$(mktemp -d "${LIVE_CHECK_EVIDENCE_DIR:-${TMPDIR:-/tmp}}/cross-agent-live.XXXXXX")
+cleanup(){ rm -rf "$NOAUTH"; echo "Evidence: $W"; }
+trap cleanup EXIT
 NOAUTH="$W/codex-home"; mkdir -p "$NOAUTH"   # 空 CODEX_HOME：无凭证，启动后必 401
 BOGUS=bogus-model-live-check                 # 不存在的模型名：Claude 在 API 调用前、Kimi 在模型解析处失败
 NONGIT="$W/nongit"; mkdir -p "$NONGIT"
@@ -27,13 +41,14 @@ NONGIT="$W/nongit"; mkdir -p "$NONGIT"
 py(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if eval(sys.argv[2]) else 1)' "$1" "$2" 2>/dev/null; }
 
 for c in claude codex kimi; do
+  selected "$c" || continue
   command -v "$c" >/dev/null 2>&1 || { echo "缺少 $c，无法检测"; exit 2; }
 done
 
 echo "== 实装版本（契约是否成立由下面的断言决定，不由版本号决定）"
-printf '  claude %s\n  codex  %s\n  kimi   %s\n' \
-  "$(claude --version 2>/dev/null)" "$(codex --version 2>/dev/null)" "$(kimi --version 2>/dev/null)"
+for c in claude codex kimi; do selected "$c" && printf '  %s %s\n' "$c" "$("$c" --version 2>/dev/null)"; done
 
+if selected claude; then
 echo "== Claude：flag 面"
 H=$(claude --help 2>&1)
 for f in " -p, --print" "--output-format" "--permission-mode" "--allowedTools" "--tools" "--resume" "--strict-mcp-config"; do
@@ -57,6 +72,8 @@ echo "== Claude：解析层（模型名不存在，API 调用前即失败）"
 [ "$rc" -ne 0 ] && has "bypassPermissions" "$(cat "$W/e")" \
   && ok "--permission-mode 的 choices 在解析层校验，仍含 bypassPermissions（rc=$rc）" || no "--permission-mode 的 choices 校验已变（rc=$rc）：$(head -c 160 "$W/e")"
 
+fi
+if selected codex; then
 echo "== Codex：flag 面"
 H=$(codex exec --help 2>&1)
 for f in "--skip-git-repo-check" "--sandbox" "--json" "--output-last-message"; do
@@ -115,6 +132,8 @@ CODEX_HOME="$NOAUTH" timeout 60 codex exec --sandbox read-only resume --skip-git
 [ "$rc" -ne 2 ] && ! has "unexpected argument" "$(cat "$W/e")" \
   && ok "契约的 review 自定义 prompt 形态（-- 在 brief 之前）可解析（rc=$rc）" || no "review 的 -- 形态不再可解析（rc=$rc）：$(tail -c 160 "$W/e")"
 
+fi
+if selected kimi; then
 echo "== Kimi：flag 面"
 H=$(kimi --help 2>&1)
 for f in "-S, --session" "--agent <name>" "--agent-file" "--output-format" "-p, --prompt"; do
@@ -157,15 +176,15 @@ done
 ( cd "$NONGIT" && timeout 5 kimi -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e" ); rc=$?
 [ "$rc" -eq 124 ] && ok "无 -p：进入 TUI 并挂住，关闭的 stdin 不放行（timeout rc=124）" || no "无 -p 的 TUI 挂住行为已变（rc=$rc）：$(head -c 120 "$W/e")"
 
+fi
 echo "== 平台：单个 argv 上限"
 BIG=$(python3 -c 'print("x"*200000)'); /bin/true "$BIG" 2>/dev/null; rc=$?
 FIT=$(python3 -c 'print("x"*131000)'); /bin/true "$FIT" 2>/dev/null; rc2=$?
 [ "$rc" -ne 0 ] && [ "$rc2" -eq 0 ] && ok "单个 argv 超过 128 KiB 时 exec 失败（rc=$rc），128 KiB 内放行——契约要求大材料走文件" || no "单个 argv 上限已变（200000B rc=$rc，131000B rc=$rc2）"
 
-if [ "${1:-}" = "--smoke" ]; then
+if [ "$SMOKE" -eq 1 ]; then
   E="$W/stderr"                           # 每次真跑的 stderr；no() 失败时附其尾巴
   CM="--model sonnet"   # 默认模型 Fable 5 的 API 安全层会间歇性整轮拒绝这类探针式 prompt（api_error）；契约测的是 CLI，不是模型
-  echo "== smoke：Claude（真跑）"
   S="$W/a"; mkdir -p "$S"   # 目录名不用 claude：实测 cwd basename 为 claude 时会被 API 安全层误拦
   # jerr <json>：失败归因——Claude 的错误进 JSON 而非 stderr，打印 terminal_reason 与 result 头
   jerr(){ python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("terminal_reason"),"|",str(d.get("result"))[:160])' "$1" 2>&1 | head -c 200; }
@@ -186,6 +205,8 @@ need=["`echo tick`","$(echo dollar)",'"dq"',"'sq'","\\n","marker-7f3a"]
 sys.exit(0 if all(x in t for x in need) else 1)
 PY
   }
+  if selected claude; then
+  echo "== smoke：Claude（真跑）"
   ( cd "$S" && timeout "$T" claude -p --output-format json --permission-mode acceptEdits $CM -- "Remember this word and nothing else: pineapple. Reply with exactly: noted" </dev/null >"$S/1.json" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && py "$S/1.json" 'd["is_error"] is False and "noted" in d["result"] and d["session_id"] and isinstance(d["permission_denials"], list)' \
     && ok "成功运行：rc=0，.is_error=false，.result/.session_id/.permission_denials 在位" \
@@ -254,16 +275,32 @@ for line in open(sys.argv[1]):
   [ "$rc" -eq 0 ] && intact "$S/12.txt" \
     && ok '-- "$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（.result）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$S/12.txt" 2>/dev/null)"
 
+  fi
+  if selected codex; then
   echo "== smoke：Codex（真跑）"
   C="$W/b"; mkdir -p "$C"
   # cx <dir> <stdout-file> <codex args…>：在 dir 里跑一次 codex（timeout、</dev/null、stderr→$E）；API 安全层整轮拒绝时
   #   按契约重新派发，最多两次；仍拒才把失败交给断言
-  cx(){ local dir=$1 out=$2 n; shift 2
+  cx(){ local dir=$1 out=$2 n arg previous='' final=''; shift 2
+    for arg in "$@"; do
+      if [ "$previous" = -o ]; then final=$arg; fi
+      previous=$arg
+    done
     for n in 1 2 3; do
+      E="$out.stderr"
+      printf '%s\n' "$@" >"$out.argv"
       ( cd "$dir" && timeout "$T" "$@" </dev/null >"$out" 2>"$E" ); rc=$?
-      grep -q 'flagged for possible cybersecurity risk' "$out" "$E" 2>/dev/null || return "$rc"
+      printf '%s\n' "$rc" >"$out.rc"
+      if ! grep -q 'flagged for possible cybersecurity risk' "$out" "$E" 2>/dev/null; then
+        [ "$rc" -eq 0 ] || return "$rc"
+        if has --json "$*"; then python3 "$HERE/check_codex_run.py" "$out" "$rc" "$final" || return 1; fi
+        return "$rc"
+      fi
+      cp "$out" "$out.attempt-$n"; cp "$E" "$E.attempt-$n"
       [ "$n" -lt 3 ] && { echo "       (API 安全层整轮拒绝，第 $n 次；按契约重新派发)"; sleep 5; }
     done
+    # 持续失败事件即失败，即使 CLI 异常返回 0 也不能绕过成功校验。
+    [ "$rc" -eq 0 ] && return 1
     return "$rc"
   }
   # cerr <jsonl>：失败归因——Codex 的 turn.failed / error 消息在 stdout 事件流里，不在 stderr
@@ -305,15 +342,23 @@ PY
   cx "$R" "$R/4.jsonl" codex exec --sandbox read-only review --json -o "$R/4.txt" -- "Review the working tree change to f.txt in one sentence."; rc=$?
   [ "$rc" -eq 0 ] && [ -s "$R/4.txt" ] && ok "exec --sandbox read-only review --json -o <prompt> 可跑" || no "review 自定义 prompt 形式失败（rc=$rc）：$(cerr "$R/4.jsonl")"
   P="$W/perm"; mkdir -p "$P"
-  cx "$P" "$P/ro.jsonl" codex exec --skip-git-repo-check --sandbox read-only --json -- "Write a text file at $P/ro.txt whose content is the word hi, then confirm in one sentence."; rc=$?
-  [ ! -f "$P/ro.txt" ] && has '"agent_message"' "$(cat "$P/ro.jsonl")" \
-    && ok "read-only：写被 OS sandbox 拦下，运行正常收尾（rc=$rc）" || no "read-only 下产生了文件或运行异常（rc=$rc）：$(cerr "$P/ro.jsonl")"
-  cx "$P" "$P/rw.jsonl" codex exec --skip-git-repo-check --sandbox workspace-write --json -- "Write a text file at $P/rw.txt whose content is the word hi, then confirm in one sentence."; rc=$?
-  [ -f "$P/rw.txt" ] && ok "workspace-write：写被放行（rc=$rc）" || no "workspace-write 下写未生效（rc=$rc）：$(cerr "$P/rw.jsonl")"
+  cx "$P" "$P/ro.jsonl" codex exec --skip-git-repo-check --sandbox read-only --json -o "$P/ro-final.txt" -- "Write a text file at $P/ro.txt whose content is the word hi, then confirm in one sentence."; rc=$?
+  [ "$rc" -eq 0 ] && [ ! -f "$P/ro.txt" ] \
+    && python3 "$HERE/check_codex_run.py" --posture "$P/ro.jsonl" read-only \
+    && ok "read-only：运行成功且文件未产生；此断言不证明 OS 拒写" || no "read-only 下产生了文件或运行异常（rc=$rc）：$(cerr "$P/ro.jsonl")"
+  cx "$P" "$P/rw.jsonl" codex exec --skip-git-repo-check --sandbox workspace-write --json -o "$P/rw-final.txt" -- "Write a text file at $P/rw.txt whose content is the word hi, then confirm in one sentence."; rc=$?
+  [ "$rc" -eq 0 ] && [ -f "$P/rw.txt" ] && [ "$(cat "$P/rw.txt")" = hi ] && ok "workspace-write：运行成功且文件内容为 hi" || no "workspace-write 下写未生效（rc=$rc）：$(cerr "$P/rw.jsonl")"
+  # 独立本机命令确保确实尝试写入；模型未尝试不作为 OS 拒写证据。
+  codex sandbox -c 'sandbox_mode="read-only"' -- python3 -c 'import pathlib,sys; pathlib.Path(sys.argv[1]).write_text("hi")' "$P/os-denied.txt" >"$P/os.stdout" 2>"$P/os.stderr"; os_rc=$?
+  printf '%s\n' "$os_rc" >"$P/os.rc"
+  [ "$os_rc" -ne 0 ] && [ ! -e "$P/os-denied.txt" ] && grep -Eq 'PermissionError:|Read-only file system' "$P/os.stderr" \
+    && ok "本机 sandbox 命令尝试写入且收到 OS 拒写错误" || no "本机 sandbox OS 拒写证据不足（rc=$os_rc）"
   cx "$C" "$C/h.jsonl" codex exec --skip-git-repo-check --sandbox read-only --json -o "$C/h.txt" -- "$(cat "$HB")"; rc=$?
   [ "$rc" -eq 0 ] && intact "$C/h.txt" \
     && ok '-- "$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（-o 文本）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(cerr "$C/h.jsonl") | $(head -c 120 "$C/h.txt" 2>/dev/null)"
 
+  fi
+  if selected kimi; then
   echo "== smoke：Kimi（真跑）"
   K="$W/c"; mkdir -p "$K"
   last(){ python3 - "$1" <<'PY'
@@ -406,6 +451,7 @@ PY
   kans "$K/h.jsonl" "$K/h.txt"
   [ "$rc" -eq 0 ] && intact "$K/h.txt" \
     && ok '"$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（最后一条 assistant content，-p 取值无需 --）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$K/h.txt" 2>/dev/null)"
+  fi
 fi
 
 echo "== $PASS ok / $FAIL fail"

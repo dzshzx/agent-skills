@@ -88,7 +88,10 @@ and explain the unsupported restriction before dispatch. Ask for the missing alt
 decision; a brief-level instruction is sufficient only when the user has not required a
 mechanical restriction. Keep the user's choice of delegate unless they authorize a change.
 
-- **Codex `--sandbox read-only`** — an OS sandbox: commands run, writes fail whatever issues them.
+- **Codex `--sandbox read-only`** — restricts local commands in the OS sandbox. For a
+  mechanically read-only dispatch, also inspect approval settings and enabled MCP/App tools:
+  these use separate controls and can affect remote state. See the
+  [official boundary documentation](https://learn.chatgpt.com/docs/agent-approvals-security#traffic-outside-the-command-network-proxy).
 - **Claude `--tools Read,Grep,Glob --strict-mcp-config`** — removes the built-in tools and every
   MCP server's tools; `--permission-mode dontAsk` is only as tight as the cwd's permission
   policy. The contract has the policy detail.

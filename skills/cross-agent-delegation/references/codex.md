@@ -24,6 +24,9 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   run, not a task failure; the posture stays.
 - A run that cannot reach the API (401, rate limit) still emits `thread.started` and ends with a
   `turn.failed` event carrying the message on stdout; stderr repeats the error. Exit 1.
+- Treat a dispatch as successful only with exit 0, `turn.completed`, a nonempty final
+  `item.completed/agent_message`, and no `turn.failed` or `error` event. A progress message
+  or an absent output file does not prove successful completion or an OS write denial.
 - The API's safety layer can refuse a whole turn the same way: `turn.failed` with "flagged for
   possible cybersecurity risk", exit 1, stderr silent. Probe-like wording — `whoami`, "pwned",
   shell metacharacters presented as a test — trips it, and it is not deterministic: the same
