@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 修改前按改动范围与风险读取目标 `SKILL.md` 的相关段落；命令、schema、脚本或模板变化再读取其直接依赖。只改描述或路由元数据时不强制通读无关正文。
 - skill 描述（frontmatter `description`）同时充当 agent 决定何时调用该 skill 的触发/路由文本——编辑时保持触发短语和范围边界（「不负责 X」）完整。
 - 这些 skill 也以安装拷贝形式存在于 agent runtime 目录（如 `~/.claude/skills/`、`~/.agents/skills/`）——本仓是唯一真源（基线在 initial commit 中从 runtime 目录导入）。在这里编辑一个 skill 后，安装拷贝在重新 install/sync 前即过期；不要直接编辑 runtime 拷贝。
-- 按变更风险验证：描述、路由元数据和文档改动运行 `scripts/verify.sh --no-live`（`validate_repository.py`、shellcheck、sync fixtures、`check-commit-subjects.sh`）；命令、脚本或运行时行为变化再执行对应检查，必要时运行目标 `skills/<name>/evals/live-check.sh`。live-check 会真调用、计费且需要本机 CLI 与凭证；用户限制禁止的 live 流程不执行，并在交付中说明未覆盖的行为。每个 skill 必须保留 live-check（`validate_repository.py` 强制），断言写在脚本头部，绿只证明断言的行为。不引入评分表、多轮爬山或 grader 子代理。`evals/evals.json` 是参考题库，不是门禁。
+- 按变更风险验证：描述、路由元数据和文档改动运行 `scripts/verify.sh --no-live`（机械门清单见 [README](README.md#releases)）；命令、脚本或运行时行为变化再执行对应检查，必要时运行目标 `skills/<name>/evals/live-check.sh`。live-check 会真调用、计费且需要本机 CLI 与凭证；用户限制禁止的 live 流程不执行，并在交付中说明未覆盖的行为。每个 skill 必须保留 live-check（`validate_repository.py` 强制），断言写在脚本头部，绿只证明断言的行为。不引入评分表、多轮爬山或 grader 子代理。`evals/evals.json` 是参考题库，不是门禁。
 - 提交信息为 `type(scope): subject` 形态：`skill(<name>): ...` / `feat(<name>): ...` / `chore: ...`；裸 `<name>: ...` 不算（`scripts/check-commit-subjects.sh` 在 verify 与 CI 校验，2026-09-02 起）。README 的 skill 表应与 `skills/` 下的内容保持同步。
 
 ## Agent skills
