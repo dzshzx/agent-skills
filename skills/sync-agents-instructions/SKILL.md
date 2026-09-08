@@ -62,8 +62,12 @@ a user-level file** — each of those creates a second injection channel.
 Shared rules reach an owner only through that owner's own `entry_file` load
 route. A plain-prose mention of a user-level boundary (one that neither loads
 the source nor tells the owner to obtain instructions from it) is fine.
-Fix a violation by removing the cross-reference — never by making one project
-surface depend on a different one.
+Before removing a cross-reference, preserve the still-valid rules it supplies
+to the owner and declared readers: put applicable project rules in their own
+existing surfaces, and shared rules through their own entry load routes.
+This minimal preservation is part of **Converge**. If it cannot be completed
+within scope and the write boundaries, retain the reference and report the
+gap. Remove the reference only after coverage is established.
 
 ## Placement
 

@@ -5,7 +5,7 @@
 #   settings、hooks、MCP 都不进被测 run；config 里 claude-code 的 entry_file 就是该临时目录的 CLAUDE.md——它确实被加载。
 # 场景：repo-a 有 CLAUDE.md 与 AGENTS.md（都已跟踪）；config 声明 claude-code / codex 两个 owner；shared.md 经 claude-code
 #   的 entry_file @-import、经 codex 的 entry 无条件读取指令覆盖；CLAUDE.md 含一条与 shared.md 逐字相同的规则（shared-covered）
-#   和一条项目专属规则；AGENTS.md 含跨 owner 引用 `@CLAUDE.md`（isolation 违规）和同一条项目专属规则；docs/agents/notes.md
+#   和一条项目专属规则；AGENTS.md 仅含跨 owner 引用 `@CLAUDE.md`（isolation 违规），解除引用必须补全项目规则；docs/agents/notes.md
 #   命中 off_limits。repo-b 的 CLAUDE.md **未跟踪**且含同一条 shared-covered 规则——任务已授权收敛，Git 状态本身不增加确认点。
 # 断言 A（Converge，任一不成立即 FAIL）：claude -p rc=0 且 result 非错误；临时 CLAUDE_CONFIG_DIR 被使用（其中生成 .claude.json）；
 #   模型 Read 了**源** SKILL.md（`Skill` 工具被禁、`--add-dir` 放行源目录与临时目录）；模型真跑了
@@ -58,7 +58,7 @@ project_instruction_file = "AGENTS.md"
 EOF
 GITC=(-c user.name=live-check -c user.email=live-check@localhost)
 printf '%s\n' '# repo-a (Claude Code)' '' "- $RULE" "- $PROJ" > "$A/CLAUDE.md"
-printf '%s\n' '# repo-a (Codex)' '' 'Project rules: see @CLAUDE.md for the full list.' "- $PROJ" > "$A/AGENTS.md"
+printf '%s\n' '# repo-a (Codex)' '' 'Project rules: see @CLAUDE.md for the full list.' > "$A/AGENTS.md"
 printf '%s\n' '# Agent workflow (owned elsewhere)' '' '- Run make check before committing.' > "$A/docs/agents/notes.md"
 git -C "$A" init -q -b master && git -C "$A" add CLAUDE.md AGENTS.md docs && git -C "$A" "${GITC[@]}" commit -q -m init
 A_INIT=$(git -C "$A" rev-parse HEAD)
@@ -86,36 +86,13 @@ dispatch(){ ( cd "$T/ws" && CLAUDE_CONFIG_DIR="$CC" timeout 900 claude -p --perm
     --disallowedTools Skill --add-dir "$T" "$SRC" --output-format stream-json --verbose \
     "$(cat "$1")" </dev/null >"$2" 2>"$2.err" ); }
 # parse <out.jsonl> <parsed.json>：最终 result 行 + Read 过的路径 + Bash 跑过的命令
-parse(){ python3 - "$1" "$SRC/SKILL.md" >"$2" <<'PY'
-import json, sys
-res, reads, cmds = {}, set(), []
-for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
-    try:
-        o = json.loads(line)
-    except ValueError:
-        continue
-    if o.get('type') == 'result':
-        res = o
-    elif o.get('type') == 'assistant':
-        for b in (o.get('message') or {}).get('content') or []:
-            if not (isinstance(b, dict) and b.get('type') == 'tool_use'):
-                continue
-            inp = b.get('input') or {}
-            if b.get('name') == 'Read':
-                reads.add(str(inp.get('file_path')))
-            elif b.get('name') == 'Bash':
-                cmds.append(str(inp.get('command')))
-print(json.dumps({'is_error': res.get('is_error'), 'terminal_reason': res.get('terminal_reason'),
-                  'result': res.get('result') or '', 'read_src': sys.argv[2] in reads, 'reads': sorted(reads),
-                  'cmds': cmds}))
-PY
-}
+parse(){ python3 "$SRC/evals/call_evidence.py" parse "$1" "$SRC/SKILL.md" >"$2"; }
 PASS=0; FAIL=0
 ok(){ PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
 no(){ FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
 jfield(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get(sys.argv[2]))[:int(sys.argv[3])])' "$1" "$2" "$3" 2>/dev/null; }
-# ran <parsed.json> <regex>：某条 Bash 调用匹配该正则（git 允许带 -C <repo> / -c key=value）
-ran(){ python3 -c 'import json,re,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if any(re.search(sys.argv[2], c) for c in d["cmds"]) else 1)' "$1" "$2" 2>/dev/null; }
+# ran <parsed.json> <kind>：关联调用及返回，识别成功的验证器或 Git diff。
+ran(){ python3 "$SRC/evals/call_evidence.py" ran "$1" "$2"; }
 # gitcmds <parsed.json>：打印含 git 的 Bash 调用（失败取证用）
 gitcmds(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" | ".join(c.replace("\n"," ")[:160] for c in d["cmds"] if "git" in c))' "$1" 2>/dev/null; }
 mentions(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if sys.argv[2] in d["result"] else 1)' "$1" "$2" 2>/dev/null; }
@@ -128,7 +105,7 @@ if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then ok "claude
 else no "claude -p 失败（rc=$rc）：$(jfield "$P" terminal_reason 80) | $(tail -c 300 "$T/a.jsonl.err" | tr '\n' ' ')"; fi
 [ -f "$CC/.claude.json" ] && ok "隔离的 CLAUDE_CONFIG_DIR 被使用（生成了 .claude.json；本机用户级 CLAUDE.md/settings/hooks 未进入 run）" || no "CLAUDE_CONFIG_DIR 未被使用"
 [ "$(jfield "$P" read_src 8)" = "True" ] && ok "模型 Read 了源 SKILL.md（不是安装副本）" || no "模型没有 Read 源 SKILL.md；它读过：$(jfield "$P" reads 300)"
-for c in 'validate_config\.py' 'git(\s+-[cC]\s*\S+)*\s+diff\b'; do
+for c in validator git-diff; do
   ran "$P" "$c" && ok "SKILL.md 的命令行真跑过：$c" || no "SKILL.md 的命令行没跑：$c；git 调用：$(gitcmds "$P")"
 done
 grep -qF -- "$RULE" "$A/CLAUDE.md" && no "repo-a：shared-covered 规则仍留在 CLAUDE.md" || ok "repo-a：shared-covered 规则已从 CLAUDE.md 收敛"
