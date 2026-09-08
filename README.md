@@ -39,10 +39,15 @@ execution surface of its own. Recover it from git history if needed.
 - **Project instruction surfaces are independent per agent.** Each
   `[[agents]]` entry declares its own `project_instruction_file`; a surface
   may not import, defer to, or treat another owner’s surface as authority.
-- Release candidates land on `master` first. After CI passes on that exact
-  commit, create its annotated `vX.Y.Z` tag. Published tags are immutable and
-  never reused; a failed release is fixed in the next patch version. Install a
-  specific tag with the skills CLI when reproducibility matters.
+- Changes reach `master` only as green candidates: push the clean, rebased
+  commit with `scripts/candidate.sh` (a `candidate/**` branch), CI runs on it,
+  and `promote.yml` fast-forwards `master` to that exact sha. The `master`
+  ruleset requires the `validate` check on every pushed sha, so `skills add`
+  never installs an unverified `master`. Release candidates are tagged from
+  `master` afterwards: create the annotated `vX.Y.Z` tag on that exact commit.
+  Published tags are immutable and never reused; a failed release is fixed in
+  the next patch version. Install a specific tag with the skills CLI when
+  reproducibility matters.
 
 ## Releases
 
