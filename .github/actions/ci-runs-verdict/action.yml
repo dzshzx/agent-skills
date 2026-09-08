@@ -1,0 +1,46 @@
+name: ci.yml runs verdict
+description: >-
+  Evaluate every ci.yml run registered for a sha and report a single verdict
+  (green / pending / failed / stale / query-error). Shared by promote.yml
+  (require mode: poll and hard-fail unless green) and release.yml (report
+  mode: never fails the step; any verdict but green sends the caller back to
+  a full local gate rerun). Logic lives in evaluate.sh. Ported verbatim from
+  dzshzx/dingtalk-automation (candidate/promote flow).
+inputs:
+  sha:
+    description: 40-hex commit whose ci.yml runs are evaluated
+    required: true
+  token:
+    description: GitHub token with actions:read and statuses:read on this repository
+    required: true
+  mode:
+    description: "require: exit non-zero unless green. report: always exit zero."
+    default: require
+  wait-seconds:
+    description: How long to keep polling for unconcluded runs (0 = single query)
+    default: "0"
+  poll-seconds:
+    description: Poll interval while waiting for unconcluded runs
+    default: "20"
+  max-age-hours:
+    description: If set, a green verdict older than this many hours becomes stale
+    default: ""
+outputs:
+  verdict:
+    description: green | pending | failed | stale | query-error
+    value: ${{ steps.evaluate.outputs.verdict }}
+runs:
+  using: composite
+  steps:
+    - id: evaluate
+      shell: bash
+      env:
+        EVIDENCE_SHA: ${{ inputs.sha }}
+        REPOSITORY: ${{ github.repository }}
+        MODE: ${{ inputs.mode }}
+        WAIT_SECONDS: ${{ inputs.wait-seconds }}
+        POLL_SECONDS: ${{ inputs.poll-seconds }}
+        MAX_AGE_HOURS: ${{ inputs.max-age-hours }}
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        bash "$GITHUB_ACTION_PATH/evaluate.sh"

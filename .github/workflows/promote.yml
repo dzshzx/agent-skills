@@ -1,0 +1,83 @@
+name: Promote candidate to master
+
+# workflow_run loads this gate from the default branch. Candidate code is data:
+# do not check it out or execute its scripts with this workflow's write token.
+# Flow: push a clean commit as candidate/<sha12>-<id> (scripts/candidate.sh);
+# CI runs on it; when every CI run for that sha is green this job fast-forwards
+# master to the exact sha and deletes the candidate branch. The master ruleset
+# requires the CI check on every pushed sha, so nothing else can land.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: ["candidate/**"]
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Candidate commit (40 lowercase hex)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  statuses: read
+
+concurrency:
+  group: promote-master
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CANDIDATE: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
+      CANDIDATE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Check out trusted integration gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          fetch-depth: 0
+      - name: Validate the candidate
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$CANDIDATE^{commit}"
+          master_head="$(git rev-parse origin/master)"
+          [[ "$CANDIDATE" != "$master_head" ]]
+          git merge-base --is-ancestor "$master_head" "$CANDIDATE"
+          if [[ -n "$CANDIDATE_BRANCH" ]]; then
+            [[ "$CANDIDATE_BRANCH" == candidate/* ]]
+            git check-ref-format "refs/heads/$CANDIDATE_BRANCH"
+          fi
+      - name: Wait for all candidate CI runs and verify admission
+        uses: ./.github/actions/ci-runs-verdict
+        with:
+          sha: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
+          token: ${{ github.token }}
+          mode: require
+          wait-seconds: "900"
+      - name: Revalidate immediately before fast-forward
+        uses: ./.github/actions/ci-runs-verdict
+        with:
+          sha: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
+          token: ${{ github.token }}
+          mode: require
+      - name: Fast-forward master
+        run: git push origin "$CANDIDATE:refs/heads/master"
+      - name: Delete only the candidate revision that was promoted
+        if: github.event_name == 'workflow_run'
+        run: |
+          set -euo pipefail
+          # Compare-and-delete is atomic at the remote; a newer push survives.
+          if ! git push origin --force-with-lease="refs/heads/$CANDIDATE_BRANCH:$CANDIDATE" \
+            ":refs/heads/$CANDIDATE_BRANCH"; then
+            echo "Candidate moved or deletion failed; retaining its branch."
+          fi
