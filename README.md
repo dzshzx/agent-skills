@@ -76,8 +76,13 @@ on the machine, so they run locally when the changed command, script, or
 runtime behavior warrants them. If the user forbids a live flow, skip it and
 state the resulting verification limit.
 
-The routing check embeds the source skill in each recorded input and checks
+The routing source-injection check embeds the source skill in each recorded input and checks
 explicit parameters or inherited parent settings against child rollouts. The
+task-skill fixture separately checks child-owned reads, execution and results;
+natural discovery and actual delivery require fresh authorized sessions.
+On-demand usage accounting reads existing logs without model calls; see the
+[routing skill](skills/codex-subagent-routing/SKILL.md) for report and acceptance entrypoints.
+The
 irreversible-command assertion supports a finite shell grammar; unsupported
 dynamic commands fail as unverifiable, even when no mutation is observed. The
 sync check compares each stage's file inventory, hashes and Git history.
@@ -89,8 +94,8 @@ credential copies are removed on exit.
 Then push the candidate, wait for CI on its exact SHA, and tag that commit:
 
 ```bash
-git push origin master
-# Wait for CI on this exact master SHA to pass.
+scripts/candidate.sh
+# After promotion, tag this exact green master SHA.
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 ```

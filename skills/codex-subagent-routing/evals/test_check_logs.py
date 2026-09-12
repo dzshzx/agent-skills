@@ -19,7 +19,7 @@ class RoutingChecks(unittest.TestCase):
             "parent": {"meta": {}, "spawns": {"call": (args or {"task_name": "child", "fork_turns": "all"}, {"model": "model-a", "effort": "high"})},
                        "handles": {"call": {"task_name": "/root/child", "nickname": "N"}}},
             "child": {"meta": {"parent_thread_id": "parent", "source": {"subagent": {"thread_spawn": {"agent_path": "/root/child", "agent_nickname": "N"}}}},
-                      "turn": {"model": "model-a", "effort": "high"}, "spawns": {}, "handles": {}}
+                      "turn": {"model": "model-a", "effort": "high"}, "spawns": {}, "handles": {}, "complete": True}
         }
 
     def test_inherited_and_explicit(self):
@@ -35,6 +35,18 @@ class RoutingChecks(unittest.TestCase):
     def test_missing_evidence(self):
         for change in [lambda n: n.pop("child"), lambda n: n["parent"]["handles"].clear(),
                        lambda n: n["child"]["turn"].clear()]:
+            nodes = self.tree()
+            change(nodes)
+            with self.assertRaises(Unverifiable):
+                check_tree("inheritance", "parent", [], nodes)
+
+    def test_limits_completion_and_combinations(self):
+        for change in [
+            lambda n: n["child"].update(complete=False),
+            lambda n: n["parent"]["spawns"].update(extra=n["parent"]["spawns"]["call"]),
+            lambda n: n["parent"]["spawns"]["call"][0].update(model="model-a"),
+            lambda n: n["parent"]["spawns"]["call"][0].update(fork_turns="0"),
+        ]:
             nodes = self.tree()
             change(nodes)
             with self.assertRaises(Unverifiable):
