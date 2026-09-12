@@ -32,6 +32,22 @@ class RoutingChecks(unittest.TestCase):
         with self.assertRaises(Unverifiable):
             check_tree("override", "parent", [], nodes)
 
+    def test_history_fork_respects_configured_resource_defaults(self):
+        nodes = self.tree()
+        nodes["child"]["turn"] = {"model": "configured", "effort": "medium"}
+        check_tree("inheritance", "parent", [], nodes,
+                   defaults={"model": "configured", "effort": "medium"})
+        with self.assertRaises(Unverifiable):
+            check_tree("inheritance", "parent", [], nodes)
+
+    def test_role_model_precedes_explicit_spawn_model(self):
+        nodes = self.tree({"task_name": "child", "fork_turns": "none",
+                           "model": "requested", "reasoning_effort": "low"})
+        nodes["child"]["turn"] = {"model": "fixed", "effort": "low"}
+        nodes["child"]["meta"]["source"]["subagent"]["thread_spawn"]["agent_role"] = "default"
+        check_tree("override", "parent", [], nodes, defaults={
+            "model": "global", "effort": "medium", "roles": {"default": {"model": "fixed"}}})
+
     def test_missing_evidence(self):
         for change in [lambda n: n.pop("child"), lambda n: n["parent"]["handles"].clear(),
                        lambda n: n["child"]["turn"].clear()]:

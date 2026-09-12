@@ -26,7 +26,10 @@ single code-mode `text(await tools.exec_command({...}));` with literal JSON
 arguments and the whole tool result. Give this evidence-format requirement
 in the test prompt; it carries no fixture skill content. Opaque orchestration
 is unverifiable, not evidence of failure to use skills. Routine instruction
-reads are allowed. A successful read must contain the exact fixture instruction;
+reads are allowed. A single `const r = await tools.exec_command({...}); text(r);`
+binding is also accepted; reassignment and output projection are not.
+Skill reads may use `cat` or a numeric `sed -n 'START,ENDp'` range.
+A successful read must contain the exact fixture instruction;
 a successful fixture-script execution and the exact final result are also
 required. The unrelated case must complete its own task without fixture reads
 or execution; missing-entry must show a failed read and a final explanation.

@@ -45,7 +45,7 @@ def check(case, rows, root):
                 calls[p.get("call_id")] = p
             elif p.get("type") in {"function_call_output", "custom_tool_call_output"}:
                 outputs[p.get("call_id")] = p.get("output", "")
-            elif p.get("type") == "message" and p.get("role") == "assistant" and p.get("phase") == "final":
+            elif p.get("type") == "message" and p.get("role") == "assistant" and p.get("phase") in {"final", "final_answer"}:
                 final = "".join(c.get("text", "") for c in p.get("content", []))
         if row.get("type") == "event_msg":
             if p.get("type") in {"task_started", "turn_started"}:
@@ -71,8 +71,15 @@ def check(case, rows, root):
             match = re.fullmatch(r"\s*text\(await tools\.exec_command\((\{.*\})\)\);?\s*",
                                  call.get("input", ""), re.S)
             if not match:
-                raise Unverifiable("unsupported code-mode evidence")
-            args = as_dict(match.group(1))
+                bound = re.fullmatch(
+                    r"\s*const ([A-Za-z_][A-Za-z0-9_]*)\s*=\s*await tools\.exec_command\((\{.*\})\);\s*text\(\1\);?\s*",
+                    call.get("input", ""), re.S)
+                if bound:
+                    args = as_dict(bound.group(2))
+                else:
+                    raise Unverifiable("unsupported code-mode evidence")
+            else:
+                args = as_dict(match.group(1))
             if not args:
                 raise Unverifiable("code-mode arguments must be literal JSON")
             if not isinstance(raw, list) or len(raw) != 2 or not raw[0].get("text", "").startswith("Script completed"):
@@ -100,16 +107,28 @@ def check(case, rows, root):
         if not cwd.is_absolute():
             raise Unverifiable("ambiguous command directory")
         target = str((cwd / argv[1]).resolve()) if len(argv) == 2 else None
-        if len(argv) == 2 and argv[0] == "cat" and target == entry:
+        is_read = len(argv) == 2 and argv[0] == "cat"
+        if (len(argv) == 4 and argv[:2] == ["sed", "-n"]
+                and re.fullmatch(r"\d+(?:,\d+)?p", argv[2])):
+            target = str((cwd / argv[3]).resolve())
+            is_read = True
+        if is_read and target == entry:
             touched = True
             read = code == 0 and INSTRUCTION in text
         elif len(argv) == 2 and argv[0] in {"python", "python3"} and target == script:
             touched = True
             ran = read and code == 0 and text.strip() == RESULT
-        elif len(argv) == 2 and argv[0] == "cat" and target == absent:
+        elif is_read and target == absent:
             missing = isinstance(code, int) and code != 0 and ("No such file" in text or "not found" in text)
+        elif is_read and target and target.endswith("/routing-stamp/SKILL.md"):
+            # Native discovery may first probe another skill root. A failed
+            # lookup is not a successful fixture read, but still counts as use
+            # for the unrelated negative case.
+            touched = True
+            if not isinstance(code, int) or code == 0:
+                raise Unverifiable("unregistered readable skill entry")
         else:
-            if (not argv or argv[0] not in {"cat", "ls", "pwd", "rg", "head", "tail"}
+            if (not argv or (not is_read and argv[0] not in {"ls", "pwd", "rg", "head", "tail"})
                     or any(token in command for token in ("stamp.py", "routing-stamp", "absent-stamp",
                                                           ";", "&", "|", "$", "`", ">", "<"))):
                 raise Unverifiable("unsupported fixture command")

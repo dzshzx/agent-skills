@@ -102,12 +102,25 @@ def summarize(tid, node, since=None, until=None, prices=None):
     counts = {"turn_starts": 0, "continuation_calls": 0, "compactions": 0}
     status = "unknown"
     missing = set()
+    # Current runtimes persist authoritative per-response records alongside
+    # UI token_count snapshots. Match cumulative totals to avoid counting both.
+    typed_snapshots, typed_turns = set(), set()
+    current_turn = None
+    for item in node["rows"]:
+        payload = item.get("payload", {})
+        if item.get("type") == "token_usage_record":
+            if payload.get("thread_id") != tid:
+                raise ValueError(f"foreign token usage inside own boundary of {tid}")
+            if payload.get("thread_token_usage"):
+                typed_snapshots.add(json.dumps(payload["thread_token_usage"], sort_keys=True))
+            typed_turns.add(payload.get("turn_id"))
     for row in node["rows"]:
         p = row.get("payload", {})
         if not isinstance(p, dict):
             continue
         kind = row.get("type")
         if kind == "turn_context":
+            current_turn = p.get("turn_id")
             current = {"model": p.get("model"), "effort": p.get("effort", p.get("reasoning_effort")),
                        "service_tier": p.get("service_tier")}
         raw_time = row.get("timestamp")
@@ -116,7 +129,7 @@ def summarize(tid, node, since=None, until=None, prices=None):
             continue
         when = timestamp(raw_time)
         in_range = not ((since and when < since) or (until and when >= until))
-        token_event = kind == "event_msg" and p.get("type") == "token_count"
+        token_event = kind == "token_usage_record" or (kind == "event_msg" and p.get("type") == "token_count")
         if not in_range and not token_event:
             continue
         if in_range:
@@ -133,14 +146,20 @@ def summarize(tid, node, since=None, until=None, prices=None):
         if kind == "response_item" and p.get("type") == "function_call":
             if p.get("name", "").split(".")[-1] in {"followup_task", "send_input", "resume_agent"}:
                 counts["continuation_calls"] += 1
-        if kind != "event_msg" or p.get("type") != "token_count":
+        if not token_event:
             continue
         if in_range and p.get("rate_limits"):
             snap = {"timestamp": raw_time, "value": p["rate_limits"]}
             if not limits or limits[-1]["value"] != snap["value"]:
                 limits.append(snap)
         info = p.get("info") or {}
-        usage = info.get("last_token_usage")
+        typed = kind == "token_usage_record"
+        if not typed and current_turn in typed_turns:
+            # UI cumulative totals can change meaning after compaction. Native
+            # records own accounting for the entire turn, regardless of that
+            # display reset; UI-only older turns retain the legacy fallback.
+            continue
+        usage = p.get("usage") if typed else info.get("last_token_usage")
         if not usage:
             continue
         if all(usage.get(k) == 0 for k in ("input_tokens", "output_tokens", "cached_input_tokens")):
@@ -148,7 +167,9 @@ def summarize(tid, node, since=None, until=None, prices=None):
             # zero billed components; they are not another completed response.
             continue
         response = p.get("response_id") or info.get("response_id")
-        cumulative = info.get("total_token_usage")
+        cumulative = p.get("thread_token_usage") if typed else info.get("total_token_usage")
+        if not typed and cumulative and json.dumps(cumulative, sort_keys=True) in typed_snapshots:
+            continue
         if response:
             key = ("response", response)
         elif cumulative:

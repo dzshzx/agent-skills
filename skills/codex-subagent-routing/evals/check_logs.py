@@ -2,11 +2,29 @@
 import json
 import re
 import shlex
+import tomllib
 from pathlib import Path
 
 
 class Unverifiable(ValueError):
     pass
+
+
+def routing_defaults(home):
+    """Snapshot configured resource defaults; history is a separate dimension."""
+    path = Path(home) / "config.toml"
+    config = tomllib.loads(path.read_text()) if path.exists() else {}
+    agents = config.get("agents", {})
+    result = {"model": agents.get("default_subagent_model"),
+              "effort": agents.get("default_subagent_reasoning_effort"), "roles": {}}
+    for name, entry in agents.items():
+        if isinstance(entry, dict) and entry.get("config_file"):
+            role_path = Path(entry["config_file"])
+            if not role_path.is_absolute():
+                role_path = Path(home) / role_path
+            role = tomllib.loads(role_path.read_text())
+            result["roles"][name] = {"model": role.get("model"), "effort": role.get("model_reasoning_effort")}
+    return result
 
 
 def command_attempts(command):
@@ -170,7 +188,7 @@ def read_node(path):
             if not turn:
                 turn = current.copy()
         elif row.get("type") == "response_item":
-            if p.get("type") == "message" and p.get("role") == "assistant" and p.get("phase") == "final":
+            if p.get("type") == "message" and p.get("role") == "assistant" and p.get("phase") in {"final", "final_answer"}:
                 final = any(c.get("text", "").strip() for c in p.get("content", []))
             if p.get("type") == "function_call" and p.get("name", "").split(".")[-1] == "spawn_agent":
                 spawns[p.get("call_id")] = (as_dict(p.get("arguments")), current.copy())
@@ -187,7 +205,7 @@ def read_node(path):
             "complete": complete and final, "file": str(path)}
 
 
-def check_tree(mode, thread_id, commands, nodes, max_children=1):
+def check_tree(mode, thread_id, commands, nodes, max_children=1, defaults=None):
     if thread_id not in nodes:
         raise Unverifiable("missing parent rollout")
     tree = [thread_id]
@@ -240,10 +258,12 @@ def check_tree(mode, thread_id, commands, nodes, max_children=1):
                 raise Unverifiable("child matched twice")
             matched.add(tid)
             for param, field in (("model", "model"), ("reasoning_effort", "effort")):
-                expected = args.get(param) or inherited.get(field)
+                configured = defaults or {}
+                role = configured.get("roles", {}).get(args.get("agent_type", "default"), {})
+                expected = role.get(field) or args.get(param) or configured.get(field) or inherited.get(field)
                 if not expected or child["turn"].get(field) != expected:
                     raise Unverifiable(f"child {field} mismatch or missing inheritance evidence")
-            if (spawn.get("agent_role") or None) != (args.get("agent_type") or None):
+            if (spawn.get("agent_role") or "default") != (args.get("agent_type") or "default"):
                 raise Unverifiable("child role mismatch")
             if cur == thread_id:
                 if mode == "inheritance" and args.get("fork_turns", "all") == "all" and not args.get("model") and not args.get("reasoning_effort"):
@@ -257,7 +277,7 @@ def check_tree(mode, thread_id, commands, nodes, max_children=1):
     return tree
 
 
-def check_run(mode, events, rc, sessions, mark, final_path):
+def check_run(mode, events, rc, sessions, mark, final_path, defaults=None):
     final_text = Path(final_path).read_text() if Path(final_path).exists() else ""
     thread_id, commands = event_summary(read_rows(events), rc, final_text)
     candidates = {}
@@ -284,5 +304,5 @@ def check_run(mode, events, rc, sessions, mark, final_path):
         if len(group) != 1:
             raise Unverifiable(f"missing/duplicate rollout {tid}: {[n['file'] for n in group]}")
         nodes[tid] = read_node(group[0]["file"])
-    tree = check_tree(mode, thread_id, commands, nodes)
+    tree = check_tree(mode, thread_id, commands, nodes, defaults=defaults)
     return {"thread_id": thread_id, "rollouts": [nodes[t]["file"] for t in tree]}

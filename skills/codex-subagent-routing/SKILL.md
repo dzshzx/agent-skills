@@ -18,6 +18,11 @@ description: Configure or troubleshoot Codex subagent routing, context inheritan
 3. Independent tasks default to `fork_turns="none"`. Use the least recent
    context needed, or full inheritance when broad background is essential.
    Full forks can prohibit model/effort overrides; follow the live schema.
+   History inheritance does not establish resource inheritance: check role
+   and global resource defaults against actual child logs.
+   Role configuration can take precedence over explicit spawn overrides.
+   To change a fixed role model, choose a fitting role or update its managed
+   configuration; a new child with only a different model argument may not suffice.
    `none` still receives base system/project instructions and the skill
    catalog. Neither recent nor full inheritance guarantees all original tool
    output: supply readable paths for critical evidence.

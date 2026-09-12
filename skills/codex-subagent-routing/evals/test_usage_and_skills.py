@@ -30,6 +30,24 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(result["totals"]["output_tokens"], 20)
         self.assertEqual(result["threads"][0]["first_request_input"], 100)
 
+    def test_native_usage_records_and_ui_snapshots(self):
+        node = self.node()
+        native = row("token_usage_record", {"thread_id": "p", "response_id": "r1",
+                     "usage": node["rows"][1]["payload"]["info"]["last_token_usage"],
+                     "thread_token_usage": node["rows"][1]["payload"]["info"]["total_token_usage"]}, 2)
+        for event in node["rows"][1:]:
+            event["payload"].pop("response_id")
+        node["rows"].insert(1, native)
+        result = report({"p": node})
+        self.assertEqual(result["observed_responses"], 1)
+        self.assertEqual(result["threads"][0]["requests"][0]["response_id"], "r1")
+        self.assertEqual(result["threads"][0]["missing"], [])
+        node["rows"][-1]["payload"]["info"]["total_token_usage"] = {"input_tokens": 12345}
+        self.assertEqual(report({"p": node})["observed_responses"], 1)
+        native["payload"]["thread_id"] = "foreign"
+        with self.assertRaises(ValueError):
+            report({"p": node})
+
     def test_legacy_and_missing(self):
         node = self.node(None)
         for r in node["rows"][1:]:
@@ -122,6 +140,8 @@ class SkillEvidenceTests(unittest.TestCase):
             self.assertEqual(check(case, rows, root)["result"], "PASS")
             with self.assertRaises(Unverifiable):
                 check(case, rows[:3] + rows[5:], root)
+        rows[5]["payload"]["phase"] = "final_answer"
+        check("explicit", rows, root)
 
     def test_parent_and_inherited_reads_rejected(self):
         root = Path("/tmp/fixture")
@@ -142,6 +162,12 @@ class SkillEvidenceTests(unittest.TestCase):
                 {"type": "input_text", "text": "Script completed\nOutput:\n"},
                 {"type": "input_text", "text": output["output"]}])
         check("natural", rows, root)
+        args = {"cmd": "sed -n '1,240p' .agents/skills/routing-stamp/SKILL.md", "workdir": str(root)}
+        rows[1]["payload"]["input"] = "const r = await tools.exec_command(" + json.dumps(args) + ");\ntext(r);"
+        check("natural", rows, root)
+        rows[1]["payload"]["input"] += "r.output = 'forged';"
+        with self.assertRaises(Unverifiable):
+            check("natural", rows, root)
         rows[1]["payload"]["input"] = "text('I read it')"
         with self.assertRaises(Unverifiable):
             check("natural", rows, root)
@@ -161,6 +187,19 @@ class SkillEvidenceTests(unittest.TestCase):
             mutate(rows)
             with self.assertRaises(Unverifiable):
                 check("explicit", rows, root)
+
+    def test_failed_alternate_root_then_correct_entry(self):
+        root = Path("/tmp/fixture")
+        rows = self.rows(root)
+        wrong = copy.deepcopy(rows[1:3])
+        wrong[0]["payload"].update(call_id="wrong",
+            arguments=json.dumps({"cmd": "cat /tmp/other/routing-stamp/SKILL.md"}))
+        wrong[1]["payload"].update(call_id="wrong",
+            output=json.dumps({"exit_code": 1, "output": "No such file"}))
+        check("natural", rows[:1] + wrong + rows[1:], root)
+        wrong[1]["payload"]["output"] = json.dumps({"exit_code": 0, "output": INSTRUCTION})
+        with self.assertRaises(Unverifiable):
+            check("natural", rows[:1] + wrong + rows[1:], root)
 
     def test_unrelated_missing_and_prepare(self):
         root = Path("/tmp/fixture")

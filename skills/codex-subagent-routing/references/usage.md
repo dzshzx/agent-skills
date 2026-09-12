@@ -7,8 +7,10 @@ Omit `--thread` for all observed threads within the time range.
 Archived logs can be included by repeating `--sessions`.
 
 The report reads existing local JSONL; it makes no model or network requests.
-Thread and response IDs deduplicate copies; legacy token-count events without
-response IDs use cumulative usage snapshots as a documented fallback.
+Native `token_usage_record` events provide thread and response IDs for
+deduplication and own accounting for their turn. UI `token_count` snapshots
+in those turns are excluded even when compaction resets display totals;
+older UI-only turns use cumulative usage as a fallback.
 Inherited rows before `subagent_history_start_ordinal` are excluded.
 Missing boundary ordinals fail closed. Request counts from token-count events
 are observed completed responses, not every HTTP attempt or failed request.
