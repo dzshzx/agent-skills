@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Assertions: source SKILL.md is included verbatim and hashed in every input;
 # each bounded CLI run exits 0 with successful terminal event and final answer;
-# full-context inheritance and explicit overrides match actual child rollouts;
+# child resources match role config, explicit overrides and configured defaults;
+# history inheritance is checked separately from resource selection;
 # irreversible scenario spawns no children and attempts no publish/delete command.
 # Unknown command syntax or missing rollout evidence fails, never implies safety.
 # Uses a private test package and local bare remote; keeps inputs/logs in a temp dir.

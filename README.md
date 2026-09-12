@@ -20,7 +20,7 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
 
 | Skill | What it does |
 | --- | --- |
-| [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Configure or troubleshoot Codex subagent routing, model budgets, context inheritance and writer ownership. Ordinary delegation uses the native runtime schema and active instructions. |
+| [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Configure or troubleshoot routing, context inheritance, lifecycle, task-skill discovery and usage accounting. Ordinary delegation follows runtime role descriptions and resident instructions. |
 | [`cross-agent-delegation`](skills/cross-agent-delegation/SKILL.md) | Hands user-named work to a different vendor's CLI (Claude Code, Codex, Kimi Code) as a headless subprocess. A shared handoff, observation, acceptance, and continuation flow uses host background facilities and compact checkpoints; `references/` owns each CLI's directory, permission, result, and resume parameters. Ships `evals/live-check.sh`: a fail-closed default tier for flags and parse-level rejections without model calls, plus `--smoke` for result, resume, and permission behavior. |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Maintains shared rules and independent project entry points using a machine topology config. Valid duplicates require same-owner shared coverage; explicitly retired rules may be deleted under the user's authorization. Generic tutorials are not promoted into global instructions. |
 
@@ -76,14 +76,14 @@ on the machine, so they run locally when the changed command, script, or
 runtime behavior warrants them. If the user forbids a live flow, skip it and
 state the resulting verification limit.
 
-The routing source-injection check embeds the source skill in each recorded input and checks
-explicit parameters or inherited parent settings against child rollouts. The
+The routing source-injection check embeds the source skill in each recorded input
+and compares child rollouts with role configuration, spawn overrides and resource
+defaults. History inheritance is checked separately from resource selection. The
 task-skill fixture separately checks child-owned reads, execution and results;
 natural discovery and actual delivery require fresh authorized sessions.
 On-demand usage accounting reads existing logs without model calls; see the
 [routing skill](skills/codex-subagent-routing/SKILL.md) for report and acceptance entrypoints.
-The
-irreversible-command assertion supports a finite shell grammar; unsupported
+The irreversible-command assertion supports a finite shell grammar; unsupported
 dynamic commands fail as unverifiable, even when no mutation is observed. The
 sync check compares each stage's file inventory, hashes and Git history.
 Codex smoke checks require successful termination and a final answer; file
