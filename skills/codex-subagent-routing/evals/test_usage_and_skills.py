@@ -129,6 +129,22 @@ class SkillEvidenceTests(unittest.TestCase):
         rows[0]["payload"].pop("parent_thread_id")
         with self.assertRaises(Unverifiable):
             check("explicit", rows, root)
+
+    def test_code_mode_result_attribution(self):
+        root = Path("/tmp/fixture")
+        rows = self.rows(root)
+        for idx in (1, 3):
+            call = rows[idx]["payload"]
+            call.update(type="custom_tool_call", name="exec",
+                        input="text(await tools.exec_command(" + call.pop("arguments") + "));")
+            output = rows[idx + 1]["payload"]
+            output.update(type="custom_tool_call_output", output=[
+                {"type": "input_text", "text": "Script completed\nOutput:\n"},
+                {"type": "input_text", "text": output["output"]}])
+        check("natural", rows, root)
+        rows[1]["payload"]["input"] = "text('I read it')"
+        with self.assertRaises(Unverifiable):
+            check("natural", rows, root)
         rows = self.rows(root)
         rows[0]["payload"]["subagent_history_start_ordinal"] = 3
         with self.assertRaises(Unverifiable):

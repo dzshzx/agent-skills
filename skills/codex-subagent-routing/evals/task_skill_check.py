@@ -1,6 +1,7 @@
 """Prepare safe local skill-discovery fixtures and check child-owned evidence."""
 import argparse
 import json
+import re
 from pathlib import Path
 import shlex
 import sys
@@ -40,9 +41,9 @@ def check(case, rows, root):
     for row in rows:
         p = as_dict(row.get("payload"))
         if row.get("type") == "response_item":
-            if p.get("type") == "function_call":
+            if p.get("type") in {"function_call", "custom_tool_call"}:
                 calls[p.get("call_id")] = p
-            elif p.get("type") == "function_call_output":
+            elif p.get("type") in {"function_call_output", "custom_tool_call_output"}:
                 outputs[p.get("call_id")] = p.get("output", "")
             elif p.get("type") == "message" and p.get("role") == "assistant" and p.get("phase") == "final":
                 final = "".join(c.get("text", "") for c in p.get("content", []))
@@ -61,18 +62,39 @@ def check(case, rows, root):
     read, ran, missing, touched = False, False, False, False
     for cid, call in calls.items():
         name = call.get("name", "").split(".")[-1]
+        if name == "send_message":
+            continue
+        raw = outputs.get(cid)
+        if call.get("type") == "custom_tool_call" and name == "exec":
+            # One awaited native call, whole result printed. No dynamic JS,
+            # output-only projection, or multi-call attribution guesses.
+            match = re.fullmatch(r"\s*text\(await tools\.exec_command\((\{.*\})\)\);?\s*",
+                                 call.get("input", ""), re.S)
+            if not match:
+                raise Unverifiable("unsupported code-mode evidence")
+            args = as_dict(match.group(1))
+            if not args:
+                raise Unverifiable("code-mode arguments must be literal JSON")
+            if not isinstance(raw, list) or len(raw) != 2 or not raw[0].get("text", "").startswith("Script completed"):
+                raise Unverifiable("missing completed code-mode output")
+            raw = raw[1].get("text", "")
+            name = "exec_command"
+        else:
+            args = as_dict(call.get("arguments"))
         if name != "exec_command":
             raise Unverifiable("unsupported tool evidence: " + name)
-        args = as_dict(call.get("arguments"))
         command = args.get("cmd", "")
         argv = shlex.split(command)
-        raw = outputs.get(cid)
         if raw is None:
             raise Unverifiable("missing tool result")
         out = as_dict(raw)
-        # Direct exec transcripts can wrap the actual result in a JSON text block.
         if not out and isinstance(raw, str):
-            raise Unverifiable("unsupported tool result encoding")
+            native = re.search(r"Process exited with code (\d+)\n(?:Final output:\n|Output:\n)(.*)\Z",
+                               raw, re.S)
+            if native:
+                out = {"exit_code": int(native.group(1)), "output": native.group(2)}
+            else:
+                raise Unverifiable("unsupported tool result encoding")
         code, text = out.get("exit_code"), out.get("output", "")
         cwd = Path(args.get("workdir", root))
         if not cwd.is_absolute():
@@ -83,16 +105,19 @@ def check(case, rows, root):
             read = code == 0 and INSTRUCTION in text
         elif len(argv) == 2 and argv[0] in {"python", "python3"} and target == script:
             touched = True
-            ran = code == 0 and text.strip() == RESULT
+            ran = read and code == 0 and text.strip() == RESULT
         elif len(argv) == 2 and argv[0] == "cat" and target == absent:
             missing = isinstance(code, int) and code != 0 and ("No such file" in text or "not found" in text)
         else:
-            raise Unverifiable("unsupported fixture command")
+            if (not argv or argv[0] not in {"cat", "ls", "pwd", "rg", "head", "tail"}
+                    or any(token in command for token in ("stamp.py", "routing-stamp", "absent-stamp",
+                                                          ";", "&", "|", "$", "`", ">", "<"))):
+                raise Unverifiable("unsupported fixture command")
     if case in {"explicit", "natural"}:
         if not (read and ran and final.strip() == RESULT):
             raise Unverifiable("requires own skill read, execution and exact result")
     elif case == "unrelated":
-        if touched or calls or final.strip() != "42":
+        if touched or final.strip() != "42":
             raise Unverifiable("unrelated task used fixture or returned wrong result")
     elif case == "missing":
         if touched or not missing or not any(word in final.lower() for word in ("missing", "not found", "不存在", "缺失")):

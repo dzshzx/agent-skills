@@ -21,9 +21,12 @@ For the missing-entry case, give the nonexistent path specified in the prompt.
 
 Export the child's own complete rollout and check with
 `python3 evals/task_skill_check.py check <case> <child-rollout> <fixture-directory>`.
-The checker accepts direct native `exec_command` reads and executions only;
-opaque orchestration or other tools are unverifiable, not evidence of failure
-to use skills. A successful read must contain the exact fixture instruction;
+The checker accepts direct native `exec_command` reads and executions, or a
+single code-mode `text(await tools.exec_command({...}));` with literal JSON
+arguments and the whole tool result. Give this evidence-format requirement
+in the test prompt; it carries no fixture skill content. Opaque orchestration
+is unverifiable, not evidence of failure to use skills. Routine instruction
+reads are allowed. A successful read must contain the exact fixture instruction;
 a successful fixture-script execution and the exact final result are also
 required. The unrelated case must complete its own task without fixture reads
 or execution; missing-entry must show a failed read and a final explanation.
