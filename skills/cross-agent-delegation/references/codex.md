@@ -11,10 +11,15 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   and `review` included.
 - `</dev/null`: on a non-TTY stdin it reads additional prompt text from stdin until EOF before
   running, so an open pipe hangs it until `timeout` fires.
-- `--json` emits JSONL events; the answer is the `item.completed` event whose `item.type` is
-  `agent_message`, in `item.text`. `-o <file>` writes that final message text on its own — plain
-  prose, easier to capture than the event stream, not a structured document. Both are
-  per-invocation flags: a resume without them prints plain text.
+- `--json` emits JSONL events; the answer is `item.text` from the last `item.completed` whose
+  `item.type` is `agent_message` and `item.phase` is not `commentary`, matching the
+  [run checker](../evals/check_codex_run.py). `-o <file>` writes that final message text on its
+  own — plain prose, easier to capture than the event stream, not a structured document. Both
+  are per-invocation flags: a resume without them prints plain text.
+- Observed with Codex 0.154.0: `exec --json` omits `ThreadItem::ImageView`. For image-read
+  evidence, inspect the matching thread's persisted rollout under `$CODEX_HOME/sessions`
+  (default `~/.codex/sessions`) for the call and its completion/result; stdout JSONL alone
+  cannot establish whether `view_image` ran.
 - Continue: `codex exec --sandbox <mode> resume --skip-git-repo-check --json -o "$SCRATCH/last.txt" -- <thread_id> "$(cat "$BRIEF")" </dev/null`,
   with the id from the `thread.started` event. `--sandbox` is an `exec` option and goes *before*
   `resume` — after it, it is an unexpected argument (same rule as `review` below); `--skip-git-repo-check`,

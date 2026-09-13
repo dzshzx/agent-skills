@@ -48,6 +48,11 @@ claude -p --output-format json --permission-mode acceptEdits -- "$(cat "$BRIEF")
 - `--output-format stream-json --verbose` opens with a `system`/`init` event whose
   `permissionMode`, `tools` and `mcp_servers` are the posture the run actually got — read them
   when a restriction matters, rather than asking the delegate what it can do.
+- When validating candidate skills (observed with Claude Code 2.1.270), user-level skills take
+  precedence over same-named project copies; verify the loaded path and body, isolating user
+  skill roots when needed. Explicit `/skill` expansion can happen before the model request
+  with no `Skill` tool call; use native session attribution and loaded-source evidence for
+  that route.
 - A denied call is reported in `.permission_denials`, naming the tool and its arguments.
   Check the affected step and subsequent evidence under the common
   [acceptance flow](../SKILL.md#accept-and-continue): a later permitted operation may complete

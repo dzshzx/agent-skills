@@ -24,6 +24,10 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
   interactive TUI and waits for a keypress, the trust prompt first in a cwd Kimi has not seen; a
   closed stdin does not release it. Only the `timeout` around the dispatch turns that hang into a
   failure.
+- Observed with Kimi 0.42.0: `-p` passes an ordinary `/skill` line through as prompt text
+  instead of dispatching it. Native invocation of a manual-only
+  (`disable-model-invocation: true`) skill needs the interactive TUI's slash-command entry;
+  naming it in `-p` does not establish native activation.
 - Failure is the exit code. A rejected launch writes its reason to stderr, and stdout holds at
   most the `system.version` meta line — a consumer reading only stdout sees an empty stream
   rather than an error.
