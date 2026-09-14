@@ -21,6 +21,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
       - name: Verify immutable release identity
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -32,3 +37,7 @@ jobs:
           test "$(git rev-list -n1 "refs/tags/$RELEASE_TAG")" = "$RELEASE_SHA"
           git fetch --no-tags origin +master:refs/remotes/origin/master
           git merge-base --is-ancestor "$RELEASE_SHA" origin/master
+          python scripts/version_plan.py verify \
+            --repository dzshzx/agent-skills \
+            --target "v=${RELEASE_TAG#v}" \
+            --tag-ref "refs/tags/$RELEASE_TAG"

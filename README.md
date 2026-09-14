@@ -91,14 +91,52 @@ absence and an observed OS sandbox denial are separate assertions. Live
 checks retain their diagnostic evidence and print its location; temporary
 credential copies are removed on exit.
 
-Then push the candidate, wait for CI on its exact SHA, and tag that commit:
+Before changing a release version, print the complete read-only version plan:
+
+```bash
+python scripts/version_plan.py plan \
+  --repository dzshzx/agent-skills \
+  --target v=X.Y.Z
+```
+
+The plan is derived from the remote `v` tag history. The exact next patch can
+proceed under existing release authorization. A minor,
+major, or skipped-patch target pauses until the user explicitly confirms that
+exact baseline-to-target plan. Unknown baselines and downgrades stop the release.
+
+Then push the candidate and wait for CI on its exact SHA. For a confirmed
+cross-level plan, preserve the printed digest in the annotated tag; a patch tag
+does not need the trailer:
 
 ```bash
 scripts/candidate.sh
-# After promotion, tag this exact green master SHA.
+```
+
+After promotion, tag the exact green master SHA. Choose one of the following
+tag commands. For the exact next patch:
+
+```bash
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
+```
+
+For a confirmed minor, major, or skipped-patch plan:
+
+```bash
+git tag -a vX.Y.Z -m "Release vX.Y.Z" \
+  -m "Version-Approval: sha256:<digest printed by version_plan.py>"
+```
+
+Then push the annotated tag:
+
+```bash
 git push origin vX.Y.Z
 ```
+
+The release workflow rebuilds the plan from remote tags before accepting the
+tag. A changed baseline or target invalidates the confirmation. It excludes the
+tag being verified from the baseline search, so retrying a failed workflow does
+not turn that tag into approval evidence. The digest records plan consistency;
+it is not an independent identity approval.
 
 `v0.1.1` (2026-07-25) predates the annotated-tag rule and is a lightweight
 tag; it is left as-is and never repaired.
