@@ -24,9 +24,6 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
 | [`cross-agent-delegation`](skills/cross-agent-delegation/SKILL.md) | Hands user-named work to a different vendor's CLI (Claude Code, Codex, Kimi Code) as a headless subprocess. A shared handoff, observation, acceptance, and continuation flow uses host background facilities and compact checkpoints; `references/` owns each CLI's directory, permission, result, and resume parameters. Ships `evals/live-check.sh`: a fail-closed default tier for flags and parse-level rejections without model calls, plus `--smoke` for result, resume, and permission behavior. |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Maintains shared rules and independent project entry points using a machine topology config. Valid duplicates require same-owner shared coverage; explicitly retired rules may be deleted under the user's authorization. Generic tutorials are not promoted into global instructions. |
 
-`refactor-batch-landing` was removed on 2026-08-06. The orchestrator had no
-execution surface of its own. Recover it from git history if needed.
-
 ## Design rules
 
 - **No machine-specific facts in SKILL.md.** Paths, hostnames, and topology
