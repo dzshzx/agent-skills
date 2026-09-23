@@ -31,7 +31,12 @@ run shellcheck -S warning skills/*/evals/*.sh scripts/*.sh
 run bash skills/sync-agents-instructions/evals/check.sh
 run bash scripts/check-offline.sh
 run bash scripts/check-commit-subjects.sh
-[ "$ALLOW_LIVE" -eq 0 ] && { echo; echo "#### 结果：$([ $FAIL -eq 0 ] && echo PASS || echo FAIL)（未跑真跑门）"; exit $FAIL; }
+[ "$ALLOW_LIVE" -eq 0 ] && {
+  echo
+  echo "#### 结果：$([ $FAIL -eq 0 ] && echo PASS || echo FAIL)（机械门）"
+  echo "#### live-check: 未执行；真实 CLI: 未调用（--no-live）"
+  exit "$FAIL"
+}
 
 if [ "$MODE" = changed ]; then
   if BASE=$(git merge-base HEAD origin/master 2>/dev/null); then
@@ -44,11 +49,20 @@ fi
 [ "$MODE" = all ] && mapfile -t NAMED < <(ls skills)
 
 echo; echo "#### 真跑门：${NAMED[*]:-（相对 origin/master 没有 skill 改动，跳过；--all 可强制全跑）}"
+LIVE_STARTED=0
+LIVE_MISSING=0
 for s in "${NAMED[@]}"; do
   LC="skills/$s/evals/live-check.sh"
-  [ -f "$LC" ] || { printf '\n== %s\n   -> FAIL：缺少 %s\n' "$s" "$LC"; FAIL=1; continue; }
+  [ -f "$LC" ] || { printf '\n== %s\n   -> FAIL：缺少 %s，未执行该 live-check\n' "$s" "$LC"; FAIL=1; LIVE_MISSING=$((LIVE_MISSING+1)); continue; }
   ARGS=(); [ "$s" = cross-agent-delegation ] && ARGS=(--smoke)
+  LIVE_STARTED=$((LIVE_STARTED+1))
   run timeout 1800 bash "$LC" "${ARGS[@]}"
 done
 echo; echo "#### 结果：$([ $FAIL -eq 0 ] && echo PASS || echo FAIL)"
+if [ "$LIVE_STARTED" -eq 0 ]; then
+  echo "#### live-check: 未执行；真实 CLI: 未调用（选中 $LIVE_MISSING 个缺少入口）"
+else
+  echo "#### live-check: 已启动 $LIVE_STARTED 个；缺少入口 $LIVE_MISSING 个"
+  echo "#### 真实 CLI: 以各 live-check 自身的输出和证据为准；本摘要不推断其内部调用"
+fi
 exit $FAIL

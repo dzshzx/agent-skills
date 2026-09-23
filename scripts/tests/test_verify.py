@@ -60,6 +60,7 @@ class VerifyTest(unittest.TestCase):
                 result, calls = self.run_verify(*args)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(calls, [])
+                self.assertIn('真实 CLI: 未调用（--no-live）', result.stdout)
 
     def test_all_and_named_is_always_usage_error(self):
         for args in itertools.permutations(('--no-live', '--all', 'alpha')):
@@ -86,6 +87,21 @@ class VerifyTest(unittest.TestCase):
         result, calls = self.run_verify('--no-live', 'alpha')
         self.assertEqual(result.returncode, 1)
         self.assertEqual(calls, [])
+
+    def test_missing_live_check_is_failure_and_not_called(self):
+        (self.root / 'skills/alpha/evals/live-check.sh').unlink()
+        result, calls = self.run_verify('alpha')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(calls, [])
+        self.assertIn('缺少 skills/alpha/evals/live-check.sh，未执行该 live-check', result.stdout)
+        self.assertIn('真实 CLI: 未调用', result.stdout)
+
+    def test_no_changed_skills_does_not_claim_cli_execution(self):
+        result, calls = self.run_verify()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(calls, [])
+        self.assertIn('live-check: 未执行', result.stdout)
+        self.assertIn('真实 CLI: 未调用', result.stdout)
 
 
 if __name__ == '__main__':

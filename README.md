@@ -67,6 +67,11 @@ range is `type(scope): subject`, e.g. `fix(<skill>): …`; a bare `<skill>: …`
 prefix fails); CI runs exactly those.
 `--no-live` disables live calls regardless of argument order. `--all` and
 explicit skill names are mutually exclusive (usage error, exit 2).
+The summary states whether any `live-check.sh` was launched. `--no-live` and an
+empty changed-skill selection explicitly report that no real CLI was called;
+missing selected files fail the gate and are counted as unrun. When a
+live-check runs, its own output and evidence establish which CLI calls occurred;
+the entrypoint does not infer that from a script's exit code.
 Live checks (`skills/<name>/evals/live-check.sh`, one per skill, enforced by
 the validator) make real, billed CLI calls and need the CLIs and credentials
 on the machine, so they run locally when the changed command, script, or
