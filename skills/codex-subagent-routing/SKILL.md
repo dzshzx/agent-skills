@@ -1,49 +1,35 @@
 ---
 name: codex-subagent-routing
-description: Configure or troubleshoot Codex subagent routing, context inheritance, lifecycle, task-skill discovery, and usage accounting. Ordinary delegation follows runtime role descriptions and resident instructions.
+description: Diagnose or configure Codex subagent routing — missing or unwanted delegation, role model and effort, context inheritance, child task-skill use, usage accounting and acceptance of routing changes. Ordinary delegation follows the runtime-injected contract.
 ---
 
 # Codex subagent routing
 
-## Configuration and diagnosis
+## Diagnosis
 
-1. Read the live spawn and continuation schemas and managed configuration
-   source. Keep machine-specific model tables, role files, concurrency and
-   fallback effort in that source. Check the native review model separately.
-   Render candidates and validate with the installed CLI.
-2. Match roles to bounded work and explicitly pass their default effort at
-   creation, subject to the user's budget. Count the parent in total slots.
-   Only the parent dispatches children. Consider startup, inherited input,
-   repeated investigation and coordination when deciding whether to delegate.
-3. Independent tasks default to `fork_turns="none"`. Use the least recent
-   context needed, or full inheritance when broad background is essential.
-   Full forks can prohibit model/effort overrides; follow the live schema.
-   History inheritance does not establish resource inheritance: check role
-   and global resource defaults against actual child logs.
-   Role configuration can take precedence over explicit spawn overrides.
-   To change a fixed role model, choose a fitting role or update its managed
-   configuration; a new child with only a different model argument may not suffice.
-   `none` still receives base system/project instructions and the skill
-   catalog. Neither recent nor full inheritance guarantees all original tool
-   output: supply readable paths for critical evidence.
-4. Supply a self-contained task packet: goal, working directory, necessary
-   facts, evidence paths, acceptance and concise return requirements.
-   Writers get explicit file/module ownership and notice that others are
-   editing in parallel: preserve and accommodate their changes.
-   Explicitly required skills travel with name, entry path and relevant
-   requirements; the child loads them through its own native mechanism.
-5. Reuse a child for supplements or rework on the same task. Independent tasks
-   and role changes need a new child. Continuation cannot change model or
-   effort: hand off findings, evidence and unresolved questions to a newly
-   created child when changing resources. After failure, timeout or model
-   unavailability, use available evidence to choose more information, another
-   role or parent execution. Handle any still-running old task before replacement
-   to avoid duplicate cost and competing writes. Without new evidence, do not
-   relaunch the same task.
-6. Keep irreversible execution in the parent under existing authorization.
-   Children return results the parent can verify. Authorized read-only use of
-   existing credentials may be delegated without exposing their values;
-   rotation and permission changes stay in the parent.
+1. Render the input first: `codex debug prompt-input <probe>` shows what the
+   model receives in about two seconds without a model call; `-c key=value`
+   renders a candidate without editing files. Read the delegation contract and
+   the `<multi_agent_mode>` block in their rendered order. Below Ultra effort
+   the default mode block is explicit-request-only and voids every earlier
+   instruction enabling proactive delegation, so contract, AGENTS and role
+   wording cannot produce it; `features.multi_agent_v2.multi_agent_mode_hint_text`
+   replaces that block. Explain delegation behaviour from the rendered input
+   before rewording instructions or running tasks.
+2. Resources come from the managed configuration source. Role files fix the
+   model and can take precedence over explicit spawn arguments; effort is passed
+   at spawn. Full forks copy parent history and can prohibit model/effort
+   overrides; `fork_turns="none"` still receives base instructions and the skill
+   catalog. A continued child keeps its model and effort: to change resources,
+   create a new child with the findings, evidence and open questions, after
+   handling any still-running old task. Confirm actual resources in the child's
+   own rollout. A required task skill travels in the brief as name, entry path
+   and relevant requirements; the child loads it natively.
+3. Behaviour tests change one variable on a small, real read-only task, with at
+   least three runs per arm. Record delegation count and role per run.
+4. Compare cost only once delegation occurs: split root and children, cached and
+   uncached input, several runs per arm. Single paired runs swing by tens of
+   percent from cache variance alone.
 
 ## Verification
 

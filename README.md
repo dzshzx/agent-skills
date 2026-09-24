@@ -20,7 +20,7 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
 
 | Skill | What it does |
 | --- | --- |
-| [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Configure or troubleshoot routing, context inheritance, lifecycle, task-skill discovery and usage accounting. Ordinary delegation follows runtime role descriptions and resident instructions. |
+| [`codex-subagent-routing`](skills/codex-subagent-routing/SKILL.md) | Diagnose or configure routing: missing or unwanted delegation, role model and effort, context inheritance, child task-skill use, usage accounting and acceptance. Ordinary delegation follows the runtime-injected contract. |
 | [`cross-agent-delegation`](skills/cross-agent-delegation/SKILL.md) | Hands user-named work to a different vendor's CLI (Claude Code, Codex, Kimi Code) as a headless subprocess. A shared handoff, observation, acceptance, and continuation flow uses host background facilities and compact checkpoints; `references/` owns each CLI's directory, permission, result, and resume parameters. Ships `evals/live-check.sh`: a fail-closed default tier for flags and parse-level rejections without model calls, plus `--smoke` for result, resume, and permission behavior. |
 | [`sync-agents-instructions`](skills/sync-agents-instructions/SKILL.md) | Maintains shared rules and independent project entry points using a machine topology config. Valid duplicates require same-owner shared coverage; explicitly retired rules may be deleted under the user's authorization. Generic tutorials are not promoted into global instructions. |
 
