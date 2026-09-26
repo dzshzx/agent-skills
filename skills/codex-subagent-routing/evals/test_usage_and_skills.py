@@ -1,6 +1,10 @@
+import contextlib
 import copy
+import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -112,6 +116,34 @@ class UsageTests(unittest.TestCase):
             (Path(tmp) / "rollout-p.jsonl").write_text(
                 "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
             self.assertEqual(report(load_threads([tmp]))["observed_responses"], 1)
+
+    def test_empty_and_half_line_rollouts_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            node = self.node()
+            rows = [row("session_meta", {"id": "p"}, 0), *node["rows"]]
+            (root / "rollout-good.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+            meta = json.dumps(row("session_meta", {"id": "q"}, 0))
+            skipped = {"rollout-empty.jsonl": ("", "empty file"),
+                       "rollout-half.jsonl": (meta[:len(meta) // 2], "no complete line"),
+                       "rollout-unterminated.jsonl": (meta, "no complete line")}
+            for name, (content, _) in skipped.items():
+                (root / name).write_text(content)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                threads = load_threads([root])
+            self.assertEqual(list(threads), ["p"])
+            self.assertEqual(report(threads)["observed_responses"], 1)
+            for name, (_, reason) in skipped.items():
+                self.assertIn(f"skipped {root / name}: {reason}", stderr.getvalue())
+            script = Path(__file__).resolve().parents[1] / "scripts/usage_report.py"
+            output = root / "report.json"
+            result = subprocess.run([sys.executable, str(script), "--sessions", tmp, "--json", str(output)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(output.read_text())["observed_responses"], 1)
+            for name in skipped:
+                self.assertIn(str(root / name), result.stderr)
 
 
 class SkillEvidenceTests(unittest.TestCase):

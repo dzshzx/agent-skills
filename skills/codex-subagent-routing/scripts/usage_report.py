@@ -35,7 +35,14 @@ def load_threads(directories, thread=None):
     for directory in directories:
         for path in sorted(Path(directory).rglob("rollout-*.jsonl")):
             with path.open() as stream:
-                first = json.loads(stream.readline())
+                head = stream.readline()
+            if not head.endswith("\n"):
+                # Empty, or its writer has not finished the first line yet; the
+                # snapshot reader below would drop that line, so skip the file.
+                reason = "empty file" if not head else "no complete line"
+                print(f"usage report: skipped {path}: {reason}", file=sys.stderr)
+                continue
+            first = json.loads(head)
             meta = first.get("payload", {}) if first.get("type") == "session_meta" else {}
             indexed.append((path, meta))
     wanted = {thread} if thread else {m.get("id") for _, m in indexed}

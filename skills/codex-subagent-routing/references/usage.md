@@ -12,8 +12,10 @@ deduplication and own accounting for their turn. UI `token_count` snapshots
 in those turns are excluded even when compaction resets display totals;
 older UI-only turns use cumulative usage as a fallback.
 Inherited rows before `subagent_history_start_ordinal` are excluded.
-Missing boundary ordinals fail closed. Request counts from token-count events
-are observed completed responses, not every HTTP attempt or failed request.
+Missing boundary ordinals fail closed. A rollout file that is empty or has
+no complete first line yet is skipped and named on stderr; the report continues.
+Request counts from token-count events are observed completed responses,
+not every HTTP attempt or failed request.
 Unrecorded retries, tier and resume markers remain unknown.
 
 Per-thread output includes role, actual model/effort/tier observations, first
