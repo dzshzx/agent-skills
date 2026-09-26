@@ -1,11 +1,13 @@
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from scope_evidence import check, git, snapshot
 
@@ -73,6 +75,58 @@ always_load_mode = MODE
                 result = subprocess.run([sys.executable, str(VALIDATOR), *flags, str(path) + ".missing"], capture_output=True)
                 self.assertEqual(result.returncode, 2)
             self.assertEqual(subprocess.run([sys.executable, str(VALIDATOR), "--bad"], capture_output=True).returncode, 2)
+
+    def test_off_limits_env_references_must_be_set(self):
+        data = {"workspace": {"project_globs": ["."], "off_limits": []},
+                "shared_sources": [{"path": "rules.md", "role": "rules", "domain": "all", "load": "always"}],
+                "agents": [{"name": "codex", "entry_file": "AGENTS.md",
+                            "project_instruction_file": "AGENTS.md", "always_load_mode": "native"}]}
+        unset = "SYNC_TEST_UNSET_VAR"
+        for pattern, var in (("$SYNC_TEST_UNSET_VAR/private/**", unset), ("${SYNC_TEST_UNSET_VAR}/**", unset)):
+            for environment, expected in (({}, "unset"), ({var: ""}, "empty"), ({var: "/srv/data"}, None)):
+                with mock.patch.dict(os.environ, environment):
+                    if not environment:
+                        os.environ.pop(var, None)
+                    case = copy.deepcopy(data)
+                    case["workspace"]["off_limits"] = ["**/docs/agents/**", pattern]
+                    errors = validator.Checker(case, False).run()
+                    if expected is None:
+                        self.assertEqual(errors, [])
+                    else:
+                        self.assertEqual(errors, [f"workspace.off_limits: {pattern!r} references {expected} environment variable ${var}"])
+        with mock.patch.dict(os.environ, {"SYNC_TEST_SET_VAR": "/srv"}):
+            os.environ.pop(unset, None)
+            case = copy.deepcopy(data)
+            case["workspace"]["off_limits"] = ["$SYNC_TEST_SET_VAR/$SYNC_TEST_UNSET_VAR/**", "${SYNC_TEST_SET_VAR/**"]
+            errors = validator.Checker(case, False).run()
+            self.assertEqual(len(errors), 2, errors)
+            self.assertIn("unset environment variable $SYNC_TEST_UNSET_VAR", errors[0])
+            self.assertIn("unterminated variable reference ${SYNC_TEST_SET_VAR/**", errors[1])
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.toml"
+            path.write_text(f'''[workspace]
+project_globs = ["."]
+off_limits = ["${{{unset}}}/**"]
+[[shared_sources]]
+path = {json.dumps(str(path))}
+role = "rules"
+domain = "all"
+load = "always"
+[[agents]]
+name = "codex"
+entry_file = {json.dumps(str(path))}
+project_instruction_file = "AGENTS.md"
+always_load_mode = "native"
+''')
+            for flags in ([], ["--schema-only"]):
+                env = {k: v for k, v in os.environ.items() if k != unset}
+                result = subprocess.run([sys.executable, str(VALIDATOR), *flags, str(path)],
+                                        capture_output=True, text=True, env=env)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertIn(f"unset environment variable ${unset}", result.stderr)
+                result = subprocess.run([sys.executable, str(VALIDATOR), *flags, str(path)],
+                                        capture_output=True, text=True, env={**env, unset: temp})
+                self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class ScopeTests(unittest.TestCase):

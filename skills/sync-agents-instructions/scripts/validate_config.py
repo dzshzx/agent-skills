@@ -6,6 +6,8 @@ Usage: validate_config.py [--schema-only] [CONFIG]
   (~/.config when XDG_CONFIG_HOME is unset).
   --schema-only skips the filesystem checks (referenced files must exist).
   Machine paths may use ~ and $VAR; both are expanded before checking.
+  Every $VAR / ${VAR} in workspace.off_limits must be set and non-empty in both
+  modes: an unexpanded or empty variable would silently void the restriction.
 
 Exit 0: valid. Exit 1: errors, one per line on stderr. Exit 2: usage or unreadable config.
 """
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -27,6 +30,9 @@ SHARED_SOURCE_KEYS = {"path", "role", "domain", "load"}
 AGENT_REQUIRED = {"name", "entry_file", "project_instruction_file", "always_load_mode"}
 AGENT_OPTIONAL = {"agent_specific_file", "skill_dirs", "runtime_constructs", "readonly_project_surfaces"}
 EXCLUSION_KEYS = {"glob", "reason"}
+# Variable syntax os.path.expandvars recognises on POSIX; an unterminated ${ is
+# matched too, because expandvars leaves it literal.
+ENV_REFERENCE = re.compile(r"\$(\w+|\{[^}]*\}?)", re.ASCII)
 
 
 def default_config() -> Path:
@@ -109,7 +115,22 @@ class Checker:
         if "project_globs" in ws:
             self.string_list("workspace.project_globs", ws["project_globs"], allow_empty=False)
         if "off_limits" in ws:
-            self.string_list("workspace.off_limits", ws["off_limits"], allow_empty=True)
+            for pattern in self.string_list("workspace.off_limits", ws["off_limits"], allow_empty=True):
+                self.env_references("workspace.off_limits", pattern)
+
+    def env_references(self, where: str, value: str) -> None:
+        """Reject $VAR / ${VAR} references that would not expand to a non-empty value."""
+        for match in ENV_REFERENCE.finditer(value):
+            name = match.group(1)
+            if name.startswith("{"):
+                if not name.endswith("}"):
+                    self.error(where, f"{value!r} has an unterminated variable reference {match.group(0)}")
+                    continue
+                name = name[1:-1]
+            if name not in os.environ:
+                self.error(where, f"{value!r} references unset environment variable ${name}")
+            elif not os.environ[name]:
+                self.error(where, f"{value!r} references empty environment variable ${name}")
 
     def shared_sources(self) -> None:
         seen: dict[str, str] = {}
