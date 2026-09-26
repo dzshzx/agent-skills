@@ -235,7 +235,8 @@ PY
   ( cd "$S" && timeout "$T" claude -p --permission-mode acceptEdits --allowedTools 'Bash(python3:*)' --output-format json $CM -- "$BASHP" </dev/null >"$S/7.json" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && py "$S/7.json" 'd["is_error"] is False and "42" in d["result"] and d["permission_denials"] == []' \
     && ok "acceptEdits + --allowedTools 'Bash(python3:*)'：命令放行，输出 42，无拒绝记录" || no "--allowedTools 放行断言失败（rc=$rc）：$(jerr "$S/7.json")"
-  # 契约：无法枚举命令时用 bypassPermissions——Bash 放行、无拒绝记录
+  # 行为：bypassPermissions 下 Bash 放行、无拒绝记录。这里只核对该模式的行为，不是派发时的选择依据：
+  #   无法枚举命令不构成使用 bypassPermissions 的授权，更宽权限须有覆盖该范围的授权（见 references/claude.md）。
   ( cd "$S" && timeout "$T" claude -p --permission-mode bypassPermissions --output-format json $CM -- "$BASHP" </dev/null >"$S/7b.json" 2>"$E" ); rc=$?
   [ "$rc" -eq 0 ] && py "$S/7b.json" 'd["is_error"] is False and "42" in d["result"] and d["permission_denials"] == []' \
     && ok "bypassPermissions：Bash 放行，输出 42，无拒绝记录" || no "bypassPermissions 断言失败（rc=$rc）：$(jerr "$S/7b.json")"
