@@ -5,7 +5,8 @@ set -euo pipefail
 # promote.yml consumes it in require mode (poll until concluded, hard-fail on
 # anything but success); release.yml consumes it in report mode (single query,
 # never fails the step — any verdict but "green" makes the caller rerun the
-# full local gate). Ported verbatim from dzshzx/dingtalk-automation.
+# full local gate). Ported verbatim from a private application repository's
+# promote gate.
 
 sha="${EVIDENCE_SHA:?}"
 repository="${REPOSITORY:?}"
@@ -87,8 +88,8 @@ while :; do
   sleep "$poll_seconds"
 done
 
-# The per-run evidence backing the verdict, for the workflow log (ADR-0038
-# judges every run for the sha, not the latest one; ported from dingtalk-automation).
+# The per-run evidence backing the verdict, for the workflow log. The verdict
+# judges every run for the sha, not only the latest one.
 echo "concluded ci.yml runs for ${sha}:"
 printf '%s\n' "$runs"
 

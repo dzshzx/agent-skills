@@ -5,7 +5,7 @@ description: >-
   (require mode: poll and hard-fail unless green) and release.yml (report
   mode: never fails the step; any verdict but green sends the caller back to
   a full local gate rerun). Logic lives in evaluate.sh. Ported verbatim from
-  dzshzx/dingtalk-automation (candidate/promote flow).
+  a private application repository's candidate/promote gate.
 inputs:
   sha:
     description: 40-hex commit whose ci.yml runs are evaluated
