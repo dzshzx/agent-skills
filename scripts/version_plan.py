@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Build and verify a release version-approval plan from remote tags."""
+"""Print and verify a release version plan (baseline -> target) from remote tags."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import subprocess
@@ -15,7 +14,6 @@ from urllib.parse import urlparse
 
 SEMVER_RE = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 NAMESPACE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
-APPROVAL_RE = re.compile(r"^Version-Approval:\s*(sha256:[0-9a-f]{64})\s*$")
 
 
 class PlanError(RuntimeError):
@@ -97,13 +95,19 @@ def build_plan(
     targets: dict[str, Version],
     tag_names: set[str],
     excluded_tag_names: set[str] | None = None,
-) -> tuple[dict[str, object], list[str]]:
+) -> dict[str, object]:
     excluded_tag_names = set(excluded_tag_names or set())
+    for namespace, target in targets.items():
+        tag_name = f"{namespace}{target}"
+        if tag_name in tag_names and tag_name not in excluded_tag_names:
+            raise PlanError(
+                f"tag {tag_name!r} is already published; published tags are not moved "
+                "or reused, use the next patch"
+            )
     excluded_tag_names.update(
         f"{namespace}{target}" for namespace, target in targets.items()
     )
     versions: list[dict[str, str]] = []
-    confirmation_namespaces: list[str] = []
     for namespace, target in sorted(targets.items()):
         candidates: list[Version] = []
         for tag_name in tag_names:
@@ -121,26 +125,17 @@ def build_plan(
             raise PlanError(
                 f"downgrade is not allowed for {namespace!r}: {baseline} -> {target}"
             )
-        automatic_patch = target == Version(baseline.major, baseline.minor, baseline.patch + 1)
-        unchanged = target == baseline
-        if not automatic_patch and not unchanged:
-            confirmation_namespaces.append(namespace)
         versions.append(
             {"namespace": namespace, "baseline": str(baseline), "target": str(target)}
         )
-    return {"schema": 1, "repository": repository, "versions": versions}, confirmation_namespaces
+    return {"schema": 1, "repository": repository, "versions": versions}
 
 
 def canonical_json(plan: dict[str, object]) -> str:
     return json.dumps(plan, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def plan_digest(plan: dict[str, object]) -> str:
-    payload = canonical_json(plan).encode("utf-8")
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
-
-
-def load_plan(args: argparse.Namespace) -> tuple[dict[str, object], list[str]]:
+def load_plan(args: argparse.Namespace) -> dict[str, object]:
     expected_repository = normalize_repository(f"https://github.com/{args.repository}")
     actual_repository = normalize_repository(
         git("config", "--get", f"remote.{args.remote}.url")
@@ -158,19 +153,9 @@ def load_plan(args: argparse.Namespace) -> tuple[dict[str, object], list[str]]:
     )
 
 
-def tag_approvals(tag_ref: str) -> list[str]:
+def verify_annotated(tag_ref: str) -> None:
     if git("cat-file", "-t", tag_ref).strip() != "tag":
         raise PlanError(f"release tag must be annotated: {tag_ref}")
-    message = git("for-each-ref", "--format=%(contents)", tag_ref)
-    approvals: list[str] = []
-    for line in message.splitlines():
-        if not line.startswith("Version-Approval:"):
-            continue
-        match = APPROVAL_RE.fullmatch(line)
-        if match is None:
-            raise PlanError(f"malformed Version-Approval trailer: {line!r}")
-        approvals.append(match.group(1))
-    return approvals
 
 
 def verify_tag_target(tag_ref: str, plan: dict[str, object]) -> None:
@@ -182,28 +167,10 @@ def verify_tag_target(tag_ref: str, plan: dict[str, object]) -> None:
         raise PlanError(f"tag {tag_name!r} is absent from the current version plan")
 
 
-def verify_approval(
-    plan: dict[str, object], confirmation_namespaces: list[str], supplied: str | None
-) -> None:
-    expected = plan_digest(plan)
-    if supplied is not None and supplied != expected:
-        raise PlanError(f"version plan changed: expected {expected}, received {supplied}")
-    if confirmation_namespaces and supplied is None:
-        raise PlanError(
-            "minor, major, or nonconsecutive version change requires "
-            f"Version-Approval: {expected}"
-        )
-
-
-def print_plan(plan: dict[str, object], confirmation_namespaces: list[str]) -> None:
+def print_plan(plan: dict[str, object]) -> None:
     for item in plan["versions"]:  # type: ignore[union-attr]
         print(f"{item['namespace']}: {item['baseline']} -> {item['target']}")
     print(f"Canonical-Version-Plan: {canonical_json(plan)}")
-    print(f"Confirmed-Version-Plan: {plan_digest(plan)}")
-    if confirmation_namespaces:
-        print("Authorization: explicit confirmation required for " + ", ".join(confirmation_namespaces))
-    else:
-        print("Authorization: automatic (exact next patch only)")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -216,32 +183,24 @@ def parser() -> argparse.ArgumentParser:
         help="complete target version set; repeat for independent namespaces",
     )
     result.add_argument("--tag-ref", help="annotated release tag ref to verify")
-    result.add_argument("--confirmed-version-plan", help="user-confirmed sha256 plan digest")
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        plan, confirmation_namespaces = load_plan(args)
-        print_plan(plan, confirmation_namespaces)
+        plan = load_plan(args)
+        print_plan(plan)
         if args.command == "plan":
-            if args.tag_ref or args.confirmed_version_plan:
-                raise PlanError("plan is read-only and does not accept execution confirmation options")
+            if args.tag_ref:
+                raise PlanError("plan is read-only and does not accept --tag-ref")
             return 0
 
         if not args.tag_ref:
             raise PlanError("verify requires --tag-ref")
         verify_tag_target(args.tag_ref, plan)
-        approvals = tag_approvals(args.tag_ref)
-        if len(approvals) > 1:
-            raise PlanError("release tag contains more than one Version-Approval trailer")
-        tag_approval = approvals[0] if approvals else None
-        if args.confirmed_version_plan and tag_approval and args.confirmed_version_plan != tag_approval:
-            raise PlanError("argument and tag Version-Approval digests disagree")
-        supplied = args.confirmed_version_plan or tag_approval
-        verify_approval(plan, confirmation_namespaces, supplied)
-        print("Version authorization verified.")
+        verify_annotated(args.tag_ref)
+        print("Version plan verified.")
         return 0
     except PlanError as error:
         print(f"ERROR: {error}", file=sys.stderr)
