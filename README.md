@@ -102,8 +102,7 @@ python scripts/version_plan.py plan \
 ```
 
 The plan is derived from the remote `v` tag history and prints the
-baseline-to-target change. The agent chooses the level and proceeds without a
-separate confirmation:
+baseline-to-target change. The agent chooses the level:
 
 - Default to a patch.
 - Use a minor only for a new capability users can notice.
