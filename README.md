@@ -102,11 +102,12 @@ python scripts/version_plan.py plan \
 ```
 
 The plan is derived from the remote `v` tag history and prints the
-baseline-to-target change. The agent chooses the level:
+baseline-to-target change. Release levels:
 
 - Default to a patch.
-- Use a minor only for a new capability users can notice.
-- Use a major (including 0.x to 1.0) only when the user asks for it.
+- A minor (a new capability users can notice) needs the user's confirmation
+  first.
+- A major (including 0.x to 1.0) needs the user's confirmation first.
   Internal refactors, directory moves and removing compatibility layers are
   not breaking changes.
 
