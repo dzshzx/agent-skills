@@ -14,19 +14,43 @@ from usage_report import load_threads, own_rows, report, timestamp
 
 
 def row(kind, payload, ordinal=1):
-    return {"type": kind, "payload": payload, "ordinal": ordinal,
-            "timestamp": f"2026-09-12T00:00:{ordinal:02d}Z"}
+    return {
+        "type": kind,
+        "payload": payload,
+        "ordinal": ordinal,
+        "timestamp": f"2026-09-12T00:00:{ordinal:02d}Z",
+    }
 
 
 class UsageTests(unittest.TestCase):
     def node(self, tier="priority"):
-        usage = {"input_tokens": 100, "cached_input_tokens": 60,
-                 "output_tokens": 20, "reasoning_output_tokens": 10}
-        token = row("event_msg", {"type": "token_count", "response_id": "r1",
-                    "info": {"last_token_usage": usage, "total_token_usage": usage}}, 2)
-        return {"meta": {"id": "p"}, "files": [],
-                "rows": [row("turn_context", {"model": "model-a", "effort": "high", "service_tier": tier}),
-                         token, copy.deepcopy(token)]}
+        usage = {
+            "input_tokens": 100,
+            "cached_input_tokens": 60,
+            "output_tokens": 20,
+            "reasoning_output_tokens": 10,
+        }
+        token = row(
+            "event_msg",
+            {
+                "type": "token_count",
+                "response_id": "r1",
+                "info": {"last_token_usage": usage, "total_token_usage": usage},
+            },
+            2,
+        )
+        return {
+            "meta": {"id": "p"},
+            "files": [],
+            "rows": [
+                row(
+                    "turn_context",
+                    {"model": "model-a", "effort": "high", "service_tier": tier},
+                ),
+                token,
+                copy.deepcopy(token),
+            ],
+        }
 
     def test_dedup_and_reasoning(self):
         result = report({"p": self.node()})
@@ -36,9 +60,18 @@ class UsageTests(unittest.TestCase):
 
     def test_native_usage_records_and_ui_snapshots(self):
         node = self.node()
-        native = row("token_usage_record", {"thread_id": "p", "response_id": "r1",
-                     "usage": node["rows"][1]["payload"]["info"]["last_token_usage"],
-                     "thread_token_usage": node["rows"][1]["payload"]["info"]["total_token_usage"]}, 2)
+        native = row(
+            "token_usage_record",
+            {
+                "thread_id": "p",
+                "response_id": "r1",
+                "usage": node["rows"][1]["payload"]["info"]["last_token_usage"],
+                "thread_token_usage": node["rows"][1]["payload"]["info"][
+                    "total_token_usage"
+                ],
+            },
+            2,
+        )
         for event in node["rows"][1:]:
             event["payload"].pop("response_id")
         node["rows"].insert(1, native)
@@ -46,7 +79,9 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(result["observed_responses"], 1)
         self.assertEqual(result["threads"][0]["requests"][0]["response_id"], "r1")
         self.assertEqual(result["threads"][0]["missing"], [])
-        node["rows"][-1]["payload"]["info"]["total_token_usage"] = {"input_tokens": 12345}
+        node["rows"][-1]["payload"]["info"]["total_token_usage"] = {
+            "input_tokens": 12345
+        }
         self.assertEqual(report({"p": node})["observed_responses"], 1)
         native["payload"]["thread_id"] = "foreign"
         with self.assertRaises(ValueError):
@@ -62,13 +97,22 @@ class UsageTests(unittest.TestCase):
         self.assertIsNone(result["cost"])
 
     def test_tier_pricing_and_partial_total(self):
-        prices = {"rates": [{"model": "model-a", "service_tier": "priority",
-                  "input_per_million": 10, "cached_input_per_million": 2, "output_per_million": 20}]}
+        prices = {
+            "rates": [
+                {
+                    "model": "model-a",
+                    "service_tier": "priority",
+                    "input_per_million": 10,
+                    "cached_input_per_million": 2,
+                    "output_per_million": 20,
+                }
+            ]
+        }
         result = report({"p": self.node()}, prices=prices)
-        self.assertAlmostEqual(result["cost"], .00092)
+        self.assertAlmostEqual(result["cost"], 0.00092)
         result = report({"p": self.node(), "q": self.node(None)}, prices=prices)
         self.assertIsNone(result["cost"])
-        self.assertAlmostEqual(result["known_cost_subtotal"], .00092)
+        self.assertAlmostEqual(result["known_cost_subtotal"], 0.00092)
 
     def test_tree_and_time(self):
         parent, child = self.node(), self.node()
@@ -86,8 +130,13 @@ class UsageTests(unittest.TestCase):
     def test_boundary_and_duplicate_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            rows = [row("session_meta", {"id": "c", "subagent_history_start_ordinal": 3}, 0),
-                    *self.node()["rows"][:2], row("turn_context", {"model": "child"}, 3)]
+            rows = [
+                row(
+                    "session_meta", {"id": "c", "subagent_history_start_ordinal": 3}, 0
+                ),
+                *self.node()["rows"][:2],
+                row("turn_context", {"model": "child"}, 3),
+            ]
             for name in ("rollout-a.jsonl", "rollout-copy.jsonl"):
                 (root / name).write_text("".join(json.dumps(r) + "\n" for r in rows))
             threads = load_threads([root])
@@ -107,14 +156,21 @@ class UsageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             node = self.node()
             rows = [row("session_meta", {"id": "p"}, 0), *node["rows"][:2]]
-            rows.append(row("event_msg", {"type": "agent_message", "message": "a\u2028b"}, 3))
+            rows.append(
+                row("event_msg", {"type": "agent_message", "message": "a\u2028b"}, 3)
+            )
             zero = copy.deepcopy(rows[2])
             zero["ordinal"] = 4
             zero["payload"]["info"]["last_token_usage"] = {
-                "input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0, "total_tokens": 123}
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cached_input_tokens": 0,
+                "total_tokens": 123,
+            }
             rows.append(zero)
             (Path(tmp) / "rollout-p.jsonl").write_text(
-                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+            )
             self.assertEqual(report(load_threads([tmp]))["observed_responses"], 1)
 
     def test_empty_and_half_line_rollouts_are_skipped(self):
@@ -122,11 +178,15 @@ class UsageTests(unittest.TestCase):
             root = Path(tmp)
             node = self.node()
             rows = [row("session_meta", {"id": "p"}, 0), *node["rows"]]
-            (root / "rollout-good.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+            (root / "rollout-good.jsonl").write_text(
+                "".join(json.dumps(r) + "\n" for r in rows)
+            )
             meta = json.dumps(row("session_meta", {"id": "q"}, 0))
-            skipped = {"rollout-empty.jsonl": ("", "empty file"),
-                       "rollout-half.jsonl": (meta[:len(meta) // 2], "no complete line"),
-                       "rollout-unterminated.jsonl": (meta, "no complete line")}
+            skipped = {
+                "rollout-empty.jsonl": ("", "empty file"),
+                "rollout-half.jsonl": (meta[: len(meta) // 2], "no complete line"),
+                "rollout-unterminated.jsonl": (meta, "no complete line"),
+            }
             for name, (content, _) in skipped.items():
                 (root / name).write_text(content)
             stderr = io.StringIO()
@@ -138,8 +198,11 @@ class UsageTests(unittest.TestCase):
                 self.assertIn(f"skipped {root / name}: {reason}", stderr.getvalue())
             script = Path(__file__).resolve().parents[1] / "scripts/usage_report.py"
             output = root / "report.json"
-            result = subprocess.run([sys.executable, str(script), "--sessions", tmp, "--json", str(output)],
-                                    capture_output=True, text=True)
+            result = subprocess.run(
+                [sys.executable, str(script), "--sessions", tmp, "--json", str(output)],
+                capture_output=True,
+                text=True,
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(output.read_text())["observed_responses"], 1)
             for name in skipped:
@@ -152,16 +215,54 @@ class SkillEvidenceTests(unittest.TestCase):
         script = root / ".agents/skills/routing-stamp/stamp.py"
         return [
             row("session_meta", {"id": "c", "parent_thread_id": "p"}, 0),
-            row("response_item", {"type": "function_call", "name": "exec_command",
-                "call_id": "read", "arguments": json.dumps({"cmd": f"cat {entry}"})}, 1),
-            row("response_item", {"type": "function_call_output", "call_id": "read",
-                "output": json.dumps({"exit_code": 0, "output": INSTRUCTION})}, 2),
-            row("response_item", {"type": "function_call", "name": "exec_command",
-                "call_id": "run", "arguments": json.dumps({"cmd": f"python3 {script}"})}, 3),
-            row("response_item", {"type": "function_call_output", "call_id": "run",
-                "output": json.dumps({"exit_code": 0, "output": RESULT})}, 4),
-            row("response_item", {"type": "message", "role": "assistant", "phase": "final",
-                "content": [{"text": RESULT}]}, 5),
+            row(
+                "response_item",
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "read",
+                    "arguments": json.dumps({"cmd": f"cat {entry}"}),
+                },
+                1,
+            ),
+            row(
+                "response_item",
+                {
+                    "type": "function_call_output",
+                    "call_id": "read",
+                    "output": json.dumps({"exit_code": 0, "output": INSTRUCTION}),
+                },
+                2,
+            ),
+            row(
+                "response_item",
+                {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "run",
+                    "arguments": json.dumps({"cmd": f"python3 {script}"}),
+                },
+                3,
+            ),
+            row(
+                "response_item",
+                {
+                    "type": "function_call_output",
+                    "call_id": "run",
+                    "output": json.dumps({"exit_code": 0, "output": RESULT}),
+                },
+                4,
+            ),
+            row(
+                "response_item",
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final",
+                    "content": [{"text": RESULT}],
+                },
+                5,
+            ),
             row("event_msg", {"type": "task_complete"}, 6),
         ]
 
@@ -187,15 +288,27 @@ class SkillEvidenceTests(unittest.TestCase):
         rows = self.rows(root)
         for idx in (1, 3):
             call = rows[idx]["payload"]
-            call.update(type="custom_tool_call", name="exec",
-                        input="text(await tools.exec_command(" + call.pop("arguments") + "));")
+            call.update(
+                type="custom_tool_call",
+                name="exec",
+                input="text(await tools.exec_command(" + call.pop("arguments") + "));",
+            )
             output = rows[idx + 1]["payload"]
-            output.update(type="custom_tool_call_output", output=[
-                {"type": "input_text", "text": "Script completed\nOutput:\n"},
-                {"type": "input_text", "text": output["output"]}])
+            output.update(
+                type="custom_tool_call_output",
+                output=[
+                    {"type": "input_text", "text": "Script completed\nOutput:\n"},
+                    {"type": "input_text", "text": output["output"]},
+                ],
+            )
         check("natural", rows, root)
-        args = {"cmd": "sed -n '1,240p' .agents/skills/routing-stamp/SKILL.md", "workdir": str(root)}
-        rows[1]["payload"]["input"] = "const r = await tools.exec_command(" + json.dumps(args) + ");\ntext(r);"
+        args = {
+            "cmd": "sed -n '1,240p' .agents/skills/routing-stamp/SKILL.md",
+            "workdir": str(root),
+        }
+        rows[1]["payload"]["input"] = (
+            "const r = await tools.exec_command(" + json.dumps(args) + ");\ntext(r);"
+        )
         check("natural", rows, root)
         rows[1]["payload"]["input"] += "r.output = 'forged';"
         with self.assertRaises(Unverifiable):
@@ -212,7 +325,9 @@ class SkillEvidenceTests(unittest.TestCase):
         root = Path("/tmp/fixture")
         for mutate in [
             lambda r: r.pop(),
-            lambda r: r[2]["payload"].update(output=json.dumps({"exit_code": 1, "output": INSTRUCTION})),
+            lambda r: r[2]["payload"].update(
+                output=json.dumps({"exit_code": 1, "output": INSTRUCTION})
+            ),
             lambda r: r[5]["payload"].update(content=[{"text": "I used the skill"}]),
         ]:
             rows = self.rows(root)
@@ -224,12 +339,18 @@ class SkillEvidenceTests(unittest.TestCase):
         root = Path("/tmp/fixture")
         rows = self.rows(root)
         wrong = copy.deepcopy(rows[1:3])
-        wrong[0]["payload"].update(call_id="wrong",
-            arguments=json.dumps({"cmd": "cat /tmp/other/routing-stamp/SKILL.md"}))
-        wrong[1]["payload"].update(call_id="wrong",
-            output=json.dumps({"exit_code": 1, "output": "No such file"}))
+        wrong[0]["payload"].update(
+            call_id="wrong",
+            arguments=json.dumps({"cmd": "cat /tmp/other/routing-stamp/SKILL.md"}),
+        )
+        wrong[1]["payload"].update(
+            call_id="wrong",
+            output=json.dumps({"exit_code": 1, "output": "No such file"}),
+        )
         check("natural", rows[:1] + wrong + rows[1:], root)
-        wrong[1]["payload"]["output"] = json.dumps({"exit_code": 0, "output": INSTRUCTION})
+        wrong[1]["payload"]["output"] = json.dumps(
+            {"exit_code": 0, "output": INSTRUCTION}
+        )
         with self.assertRaises(Unverifiable):
             check("natural", rows[:1] + wrong + rows[1:], root)
 
@@ -240,13 +361,19 @@ class SkillEvidenceTests(unittest.TestCase):
         unrelated[1]["payload"]["content"] = [{"text": "42"}]
         check("unrelated", unrelated, root)
         rows = self.rows(root)
-        rows[1]["payload"]["arguments"] = json.dumps({"cmd": f"cat {root}/absent-stamp/SKILL.md"})
-        rows[2]["payload"]["output"] = json.dumps({"exit_code": 1, "output": "No such file"})
+        rows[1]["payload"]["arguments"] = json.dumps(
+            {"cmd": f"cat {root}/absent-stamp/SKILL.md"}
+        )
+        rows[2]["payload"]["output"] = json.dumps(
+            {"exit_code": 1, "output": "No such file"}
+        )
         rows[5]["payload"]["content"] = [{"text": "Required skill entry is missing."}]
         check("missing", rows[:3] + rows[5:], root)
         with tempfile.TemporaryDirectory() as tmp:
             prompts = prepare(Path(tmp) / "fixture")
-            self.assertEqual(set(prompts), {"explicit", "natural", "unrelated", "missing"})
+            self.assertEqual(
+                set(prompts), {"explicit", "natural", "unrelated", "missing"}
+            )
             self.assertNotIn("routing-stamp", prompts["natural"])
 
 

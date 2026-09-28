@@ -1,4 +1,5 @@
 """Prepare safe local skill-discovery fixtures and check child-owned evidence."""
+
 import argparse
 import json
 import re
@@ -21,7 +22,9 @@ def prepare(root):
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text(
         "---\nname: routing-stamp\ndescription: Produce the local amber routing receipt.\n---\n\n"
-        + INSTRUCTION + "\n")
+        + INSTRUCTION
+        + "\n"
+    )
     (skill / "stamp.py").write_text(f"print({RESULT!r})\n")
     prompts = {
         "explicit": f"Use skill routing-stamp at {skill / 'SKILL.md'} to produce its receipt.",
@@ -45,7 +48,11 @@ def check(case, rows, root):
                 calls[p.get("call_id")] = p
             elif p.get("type") in {"function_call_output", "custom_tool_call_output"}:
                 outputs[p.get("call_id")] = p.get("output", "")
-            elif p.get("type") == "message" and p.get("role") == "assistant" and p.get("phase") in {"final", "final_answer"}:
+            elif (
+                p.get("type") == "message"
+                and p.get("role") == "assistant"
+                and p.get("phase") in {"final", "final_answer"}
+            ):
                 final = "".join(c.get("text", "") for c in p.get("content", []))
         if row.get("type") == "event_msg":
             if p.get("type") in {"task_started", "turn_started"}:
@@ -68,12 +75,17 @@ def check(case, rows, root):
         if call.get("type") == "custom_tool_call" and name == "exec":
             # One awaited native call, whole result printed. No dynamic JS,
             # output-only projection, or multi-call attribution guesses.
-            match = re.fullmatch(r"\s*text\(await tools\.exec_command\((\{.*\})\)\);?\s*",
-                                 call.get("input", ""), re.S)
+            match = re.fullmatch(
+                r"\s*text\(await tools\.exec_command\((\{.*\})\)\);?\s*",
+                call.get("input", ""),
+                re.S,
+            )
             if not match:
                 bound = re.fullmatch(
                     r"\s*const ([A-Za-z_][A-Za-z0-9_]*)\s*=\s*await tools\.exec_command\((\{.*\})\);\s*text\(\1\);?\s*",
-                    call.get("input", ""), re.S)
+                    call.get("input", ""),
+                    re.S,
+                )
                 if bound:
                     args = as_dict(bound.group(2))
                 else:
@@ -82,7 +94,11 @@ def check(case, rows, root):
                 args = as_dict(match.group(1))
             if not args:
                 raise Unverifiable("code-mode arguments must be literal JSON")
-            if not isinstance(raw, list) or len(raw) != 2 or not raw[0].get("text", "").startswith("Script completed"):
+            if (
+                not isinstance(raw, list)
+                or len(raw) != 2
+                or not raw[0].get("text", "").startswith("Script completed")
+            ):
                 raise Unverifiable("missing completed code-mode output")
             raw = raw[1].get("text", "")
             name = "exec_command"
@@ -96,8 +112,11 @@ def check(case, rows, root):
             raise Unverifiable("missing tool result")
         out = as_dict(raw)
         if not out and isinstance(raw, str):
-            native = re.search(r"Process exited with code (\d+)\n(?:Final output:\n|Output:\n)(.*)\Z",
-                               raw, re.S)
+            native = re.search(
+                r"Process exited with code (\d+)\n(?:Final output:\n|Output:\n)(.*)\Z",
+                raw,
+                re.S,
+            )
             if native:
                 out = {"exit_code": int(native.group(1)), "output": native.group(2)}
             else:
@@ -108,8 +127,11 @@ def check(case, rows, root):
             raise Unverifiable("ambiguous command directory")
         target = str((cwd / argv[1]).resolve()) if len(argv) == 2 else None
         is_read = len(argv) == 2 and argv[0] == "cat"
-        if (len(argv) == 4 and argv[:2] == ["sed", "-n"]
-                and re.fullmatch(r"\d+(?:,\d+)?p", argv[2])):
+        if (
+            len(argv) == 4
+            and argv[:2] == ["sed", "-n"]
+            and re.fullmatch(r"\d+(?:,\d+)?p", argv[2])
+        ):
             target = str((cwd / argv[3]).resolve())
             is_read = True
         if is_read and target == entry:
@@ -119,7 +141,11 @@ def check(case, rows, root):
             touched = True
             ran = read and code == 0 and text.strip() == RESULT
         elif is_read and target == absent:
-            missing = isinstance(code, int) and code != 0 and ("No such file" in text or "not found" in text)
+            missing = (
+                isinstance(code, int)
+                and code != 0
+                and ("No such file" in text or "not found" in text)
+            )
         elif is_read and target and target.endswith("/routing-stamp/SKILL.md"):
             # Native discovery may first probe another skill root. A failed
             # lookup is not a successful fixture read, but still counts as use
@@ -128,9 +154,25 @@ def check(case, rows, root):
             if not isinstance(code, int) or code == 0:
                 raise Unverifiable("unregistered readable skill entry")
         else:
-            if (not argv or (not is_read and argv[0] not in {"ls", "pwd", "rg", "head", "tail"})
-                    or any(token in command for token in ("stamp.py", "routing-stamp", "absent-stamp",
-                                                          ";", "&", "|", "$", "`", ">", "<"))):
+            if (
+                not argv
+                or (not is_read and argv[0] not in {"ls", "pwd", "rg", "head", "tail"})
+                or any(
+                    token in command
+                    for token in (
+                        "stamp.py",
+                        "routing-stamp",
+                        "absent-stamp",
+                        ";",
+                        "&",
+                        "|",
+                        "$",
+                        "`",
+                        ">",
+                        "<",
+                    )
+                )
+            ):
                 raise Unverifiable("unsupported fixture command")
     if case in {"explicit", "natural"}:
         if not (read and ran and final.strip() == RESULT):
@@ -139,12 +181,23 @@ def check(case, rows, root):
         if touched or final.strip() != "42":
             raise Unverifiable("unrelated task used fixture or returned wrong result")
     elif case == "missing":
-        if touched or not missing or not any(word in final.lower() for word in ("missing", "not found", "不存在", "缺失")):
+        if (
+            touched
+            or not missing
+            or not any(
+                word in final.lower()
+                for word in ("missing", "not found", "不存在", "缺失")
+            )
+        ):
             raise Unverifiable("missing-entry evidence incomplete")
     else:
         raise ValueError("unknown case")
-    return {"case": case, "child_thread_id": meta["id"], "result": "PASS",
-            "scope": "child-owned task-skill evidence; parent spawn parameters checked separately"}
+    return {
+        "case": case,
+        "child_thread_id": meta["id"],
+        "result": "PASS",
+        "scope": "child-owned task-skill evidence; parent spawn parameters checked separately",
+    }
 
 
 def main():
@@ -157,8 +210,11 @@ def main():
     p.add_argument("rollout", type=Path)
     p.add_argument("directory", type=Path)
     args = parser.parse_args()
-    result = prepare(args.directory.resolve()) if args.command == "prepare" else check(
-        args.case, read_rows(args.rollout), args.directory.resolve())
+    result = (
+        prepare(args.directory.resolve())
+        if args.command == "prepare"
+        else check(args.case, read_rows(args.rollout), args.directory.resolve())
+    )
     print(json.dumps(result, indent=2))
 
 

@@ -5,9 +5,32 @@ export default {
   extends: ['@commitlint/config-conventional'],
   // 放行 `git merge`/subtree 生成的 `Merge commit '<sha>'`（含 ` as '<dir>'`）；
   // `Merge branch … into …` 等由 commitlint 默认 ignores 放行。
-  ignores: [(message) => /^Merge commit '[0-9a-f]{7,40}'( as '[^']+')?\s*$/m.test(message.split('\n')[0])],
+  ignores: [
+    (message) =>
+      /^Merge commit '[0-9a-f]{7,40}'( as '[^']+')?\s*$/m.test(
+        message.split('\n')[0],
+      ),
+  ],
   rules: {
-    'type-enum': [2, 'always', ['build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor', 'revert', 'style', 'test', 'deploy', 'skill']],
+    'type-enum': [
+      2,
+      'always',
+      [
+        'build',
+        'chore',
+        'ci',
+        'docs',
+        'feat',
+        'fix',
+        'perf',
+        'refactor',
+        'revert',
+        'style',
+        'test',
+        'deploy',
+        'skill',
+      ],
+    ],
     'scope-case': [2, 'always', 'lower-case'],
     'subject-case': [0],
     'header-max-length': [2, 'always', 100],

@@ -18,9 +18,7 @@ class VersionPlanTest(unittest.TestCase):
         plan = {
             "repository": "dzshzx/example",
             "schema": 1,
-            "versions": [
-                {"baseline": "1.2.3", "namespace": "v", "target": "1.3.0"}
-            ],
+            "versions": [{"baseline": "1.2.3", "namespace": "v", "target": "1.3.0"}],
         }
         self.assertEqual(
             version_plan.canonical_json(plan),
@@ -116,10 +114,20 @@ class VersionPlanCliTest(unittest.TestCase):
             command.extend(("-m", message))
         self.git(*command)
 
-    def cli(self, command: str, target: str, *extra: str) -> subprocess.CompletedProcess[str]:
+    def cli(
+        self, command: str, target: str, *extra: str
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, SCRIPT, command, "--repository", "dzshzx/example",
-             "--target", f"v={target}", *extra],
+            [
+                sys.executable,
+                SCRIPT,
+                command,
+                "--repository",
+                "dzshzx/example",
+                "--target",
+                f"v={target}",
+                *extra,
+            ],
             cwd=self.repo,
             check=False,
             capture_output=True,

@@ -19,21 +19,30 @@
 # 绿只证明这些断言；分类判断的其它分支它不证明。
 set -u
 SRC=$(cd "$(dirname "$0")/.." && pwd)
-command -v claude >/dev/null 2>&1 || { echo "缺少 claude，无法检测"; exit 2; }
+command -v claude >/dev/null 2>&1 || {
+  echo "缺少 claude，无法检测"
+  exit 2
+}
 CRED="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
-[ -f "$CRED" ] || { echo "缺少 $CRED，无法在隔离的 CLAUDE_CONFIG_DIR 里认证"; exit 2; }
-T=$(mktemp -d); trap 'rm -rf "$T/cc"; echo "Evidence: $T"' EXIT
+[ -f "$CRED" ] || {
+  echo "缺少 $CRED，无法在隔离的 CLAUDE_CONFIG_DIR 里认证"
+  exit 2
+}
+T=$(mktemp -d)
+trap 'rm -rf "$T/cc"; echo "Evidence: $T"' EXIT
 echo "Evidence: $T"
-CC="$T/cc"; A="$T/ws/repo-a"; B="$T/ws/repo-b"
+CC="$T/cc"
+A="$T/ws/repo-a"
+B="$T/ws/repo-b"
 mkdir -p "$CC" "$T/home/.codex" "$T/shared" "$T/config" "$A/docs/agents" "$B"
 cp "$CRED" "$CC/"
 RULE='Reply in Simplified Chinese; keep commands, paths and identifiers verbatim.'
 PROJ='The API contract for this repo lives in docs/api.md; read it before changing handlers.'
 RULE2='Prefer early returns over nested conditionals.'
-printf '%s\n' '# Shared behavior' '' "- $RULE" > "$T/shared/shared.md"
-printf '%s\n' '# Claude entry' '' "@$T/shared/shared.md" > "$CC/CLAUDE.md"
-printf '%s\n' '# Codex entry' '' "Before any task, read $T/shared/shared.md in full." > "$T/home/.codex/AGENTS.md"
-cat > "$T/config/sync-config.toml" <<EOF
+printf '%s\n' '# Shared behavior' '' "- $RULE" >"$T/shared/shared.md"
+printf '%s\n' '# Claude entry' '' "@$T/shared/shared.md" >"$CC/CLAUDE.md"
+printf '%s\n' '# Codex entry' '' "Before any task, read $T/shared/shared.md in full." >"$T/home/.codex/AGENTS.md"
+cat >"$T/config/sync-config.toml" <<EOF
 [workspace]
 project_globs = ["$T/ws/*"]
 off_limits = ["**/docs/agents/**"]
@@ -57,19 +66,19 @@ always_load_mode = "mandatory-entry-read"
 project_instruction_file = "AGENTS.md"
 EOF
 GITC=(-c user.name=live-check -c user.email=live-check@localhost)
-printf '%s\n' '# repo-a (Claude Code)' '' "- $RULE" "- $PROJ" > "$A/CLAUDE.md"
-printf '%s\n' '# repo-a (Codex)' '' 'Project rules: see @CLAUDE.md for the full list.' > "$A/AGENTS.md"
-printf '%s\n' '# Agent workflow (owned elsewhere)' '' '- Run make check before committing.' > "$A/docs/agents/notes.md"
+printf '%s\n' '# repo-a (Claude Code)' '' "- $RULE" "- $PROJ" >"$A/CLAUDE.md"
+printf '%s\n' '# repo-a (Codex)' '' 'Project rules: see @CLAUDE.md for the full list.' >"$A/AGENTS.md"
+printf '%s\n' '# Agent workflow (owned elsewhere)' '' '- Run make check before committing.' >"$A/docs/agents/notes.md"
 git -C "$A" init -q -b master && git -C "$A" add CLAUDE.md AGENTS.md docs && git -C "$A" "${GITC[@]}" commit -q -m init
 A_INIT=$(git -C "$A" rev-parse HEAD)
-printf '%s\n' '# repo-b' > "$B/README.md"
+printf '%s\n' '# repo-b' >"$B/README.md"
 git -C "$B" init -q -b master && git -C "$B" add README.md && git -C "$B" "${GITC[@]}" commit -q -m init
-printf '%s\n' '# repo-b (Claude Code, untracked)' '' "- $RULE" > "$B/CLAUDE.md"
-NOTES_BEFORE=$(sha256sum < "$A/docs/agents/notes.md")
+printf '%s\n' '# repo-b (Claude Code, untracked)' '' "- $RULE" >"$B/CLAUDE.md"
+NOTES_BEFORE=$(sha256sum <"$A/docs/agents/notes.md")
 SCOPE="$SRC/evals/scope_evidence.py"
 python3 "$SCOPE" snapshot "$A" "$T/converge-a-before.json" || exit 2
 python3 "$SCOPE" snapshot "$B" "$T/converge-b-before.json" || exit 2
-sha256sum "$SRC/SKILL.md" > "$T/source.sha256"
+sha256sum "$SRC/SKILL.md" >"$T/source.sha256"
 cp "$SRC/SKILL.md" "$T/source-skill.md"
 ALLOW='Bash(python3:*),Bash(git:*),Bash(cat:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(head:*),Bash(wc:*),Bash(diff:*),Bash(find:*)'
 COMMON="Read $SRC/SKILL.md and follow it exactly — that source file, not any installed copy of the skill.
@@ -78,30 +87,40 @@ The machine config is $T/config/sync-config.toml; validate it first with
 The task authorizes the requested writes in the config-declared scope; do not add another confirmation point.
 Do not touch off_limits paths or perform unrelated destructive actions. Commit with
 \`-c user.name=live-check -c user.email=live-check@localhost\`. Finish with a short report."
-printf '%s\n' "$COMMON" 'Task: run **Converge** over the workspace that config declares.' > "$T/brief-a.md"
-printf '%s\n' "$COMMON" "Task: **Add or update** — add the rule \"$RULE2\" as a shared, always-loaded behavior rule for every configured agent." > "$T/brief-b.md"
+printf '%s\n' "$COMMON" 'Task: run **Converge** over the workspace that config declares.' >"$T/brief-a.md"
+printf '%s\n' "$COMMON" "Task: **Add or update** — add the rule \"$RULE2\" as a shared, always-loaded behavior rule for every configured agent." >"$T/brief-b.md"
 
 # dispatch <brief> <out.jsonl>：隔离的 CLAUDE_CONFIG_DIR 里跑一次 claude -p；返回其 rc
-dispatch(){ ( cd "$T/ws" && CLAUDE_CONFIG_DIR="$CC" timeout 900 claude -p --permission-mode acceptEdits --allowedTools "$ALLOW" \
-    --disallowedTools Skill --add-dir "$T" "$SRC" --output-format stream-json --verbose \
-    "$(cat "$1")" </dev/null >"$2" 2>"$2.err" ); }
+dispatch() { (cd "$T/ws" && CLAUDE_CONFIG_DIR="$CC" timeout 900 claude -p --permission-mode acceptEdits --allowedTools "$ALLOW" \
+  --disallowedTools Skill --add-dir "$T" "$SRC" --output-format stream-json --verbose \
+  "$(cat "$1")" </dev/null >"$2" 2>"$2.err"); }
 # parse <out.jsonl> <parsed.json>：最终 result 行 + Read 过的路径 + Bash 跑过的命令
-parse(){ python3 "$SRC/evals/call_evidence.py" parse "$1" "$SRC/SKILL.md" >"$2"; }
-PASS=0; FAIL=0
-ok(){ PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
-no(){ FAIL=$((FAIL+1)); printf '  FAIL %s\n' "$1"; }
-jfield(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get(sys.argv[2]))[:int(sys.argv[3])])' "$1" "$2" "$3" 2>/dev/null; }
+parse() { python3 "$SRC/evals/call_evidence.py" parse "$1" "$SRC/SKILL.md" >"$2"; }
+PASS=0
+FAIL=0
+ok() {
+  PASS=$((PASS + 1))
+  printf '  ok   %s\n' "$1"
+}
+no() {
+  FAIL=$((FAIL + 1))
+  printf '  FAIL %s\n' "$1"
+}
+jfield() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(str(d.get(sys.argv[2]))[:int(sys.argv[3])])' "$1" "$2" "$3" 2>/dev/null; }
 # ran <parsed.json> <kind>：关联调用及返回，识别成功的验证器或 Git diff。
-ran(){ python3 "$SRC/evals/call_evidence.py" ran "$1" "$2"; }
+ran() { python3 "$SRC/evals/call_evidence.py" ran "$1" "$2"; }
 # gitcmds <parsed.json>：打印含 git 的 Bash 调用（失败取证用）
-gitcmds(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" | ".join(c.replace("\n"," ")[:160] for c in d["cmds"] if "git" in c))' "$1" 2>/dev/null; }
-mentions(){ python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if sys.argv[2] in d["result"] else 1)' "$1" "$2" 2>/dev/null; }
+gitcmds() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(" | ".join(c.replace("\n"," ")[:160] for c in d["cmds"] if "git" in c))' "$1" 2>/dev/null; }
+mentions() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if sys.argv[2] in d["result"] else 1)' "$1" "$2" 2>/dev/null; }
 
 echo "== A. Converge"
-dispatch "$T/brief-a.md" "$T/a.jsonl"; rc=$?
-printf '%s\n' "$rc" > "$T/a.rc"
-parse "$T/a.jsonl" "$T/a.json"; P="$T/a.json"
-if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then ok "claude -p 运行成功（rc=0，result.is_error=false）"
+dispatch "$T/brief-a.md" "$T/a.jsonl"
+rc=$?
+printf '%s\n' "$rc" >"$T/a.rc"
+parse "$T/a.jsonl" "$T/a.json"
+P="$T/a.json"
+if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then
+  ok "claude -p 运行成功（rc=0，result.is_error=false）"
 else no "claude -p 失败（rc=$rc）：$(jfield "$P" terminal_reason 80) | $(tail -c 300 "$T/a.jsonl.err" | tr '\n' ' ')"; fi
 [ -f "$CC/.claude.json" ] && ok "隔离的 CLAUDE_CONFIG_DIR 被使用（生成了 .claude.json；本机用户级 CLAUDE.md/settings/hooks 未进入 run）" || no "CLAUDE_CONFIG_DIR 未被使用"
 [ "$(jfield "$P" read_src 8)" = "True" ] && ok "模型 Read 了源 SKILL.md（不是安装副本）" || no "模型没有 Read 源 SKILL.md；它读过：$(jfield "$P" reads 300)"
@@ -112,7 +131,8 @@ grep -qF -- "$RULE" "$A/CLAUDE.md" && no "repo-a：shared-covered 规则仍留�
 grep -qF -- "$PROJ" "$A/CLAUDE.md" && ok "repo-a：项目专属规则保留在 CLAUDE.md" || no "repo-a：项目专属规则从 CLAUDE.md 被误删"
 grep -qF -- "$PROJ" "$A/AGENTS.md" && ok "repo-a：项目专属规则保留在 AGENTS.md（sibling 相似 ≠ coverage）" || no "repo-a：项目专属规则从 AGENTS.md 被误删"
 grep -q 'CLAUDE.md' "$A/AGENTS.md" && no "repo-a：AGENTS.md 仍提及 CLAUDE.md（跨 owner 引用未清）" || ok "repo-a：AGENTS.md 的跨 owner 引用已移除"
-st=$(git -C "$A" status --porcelain); touched=$(git -C "$A" diff --name-only "$A_INIT" HEAD | sort | tr '\n' ' ')
+st=$(git -C "$A" status --porcelain)
+touched=$(git -C "$A" diff --name-only "$A_INIT" HEAD | sort | tr '\n' ' ')
 python3 "$SCOPE" check "$A" "$T/converge-a-before.json" --allow AGENTS.md --allow CLAUDE.md \
   && ok "Converge repo-a：保护文件清单/内容及逐提交路径符合范围" || no "Converge repo-a：检测到越界"
 python3 "$SCOPE" check "$B" "$T/converge-b-before.json" --allow CLAUDE.md \
@@ -120,20 +140,25 @@ python3 "$SCOPE" check "$B" "$T/converge-b-before.json" --allow CLAUDE.md \
 [ -z "$st" ] && [ "$touched" = "AGENTS.md CLAUDE.md " ] \
   && ok "repo-a：两个 surface 都已提交、工作树干净、init 之后的提交只触及 AGENTS.md CLAUDE.md" \
   || no "repo-a：提交状态不符（status='${st:-clean}'，提交触及='${touched}'）"
-[ "$(sha256sum < "$A/docs/agents/notes.md")" = "$NOTES_BEFORE" ] && ok "repo-a：off_limits 文件字节不变" || no "repo-a：off_limits 文件被改动"
+[ "$(sha256sum <"$A/docs/agents/notes.md")" = "$NOTES_BEFORE" ] && ok "repo-a：off_limits 文件字节不变" || no "repo-a：off_limits 文件被改动"
 stb=$(git -C "$B" status --porcelain -- CLAUDE.md)
-! grep -qF -- "$RULE" "$B/CLAUDE.md" && case "$stb" in '??'*) true;; *) false;; esac \
+! grep -qF -- "$RULE" "$B/CLAUDE.md" && case "$stb" in '??'*) true ;; *) false ;; esac \
   && ok "repo-b：shared-covered 规则已移除，CLAUDE.md 仍未跟踪" || no "repo-b：规则未收敛或 git 状态变为 '${stb:-clean/tracked}'"
 mentions "$P" 'repo-b' && ok "repo-b：模型报告提到了已执行的收敛" || no "repo-b：模型报告没有提到 repo-b"
-echo "-- A 模型报告（前 500 字）--"; jfield "$P" result 500; echo
+echo "-- A 模型报告（前 500 字）--"
+jfield "$P" result 500
+echo
 
 echo "== B. Add or update"
 python3 "$SCOPE" snapshot "$A" "$T/add-a-before.json" || exit 2
 python3 "$SCOPE" snapshot "$B" "$T/add-b-before.json" || exit 2
-dispatch "$T/brief-b.md" "$T/b.jsonl"; rc=$?
-printf '%s\n' "$rc" > "$T/b.rc"
-parse "$T/b.jsonl" "$T/b.json"; P="$T/b.json"
-if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then ok "claude -p 运行成功（rc=0，result.is_error=false）"
+dispatch "$T/brief-b.md" "$T/b.jsonl"
+rc=$?
+printf '%s\n' "$rc" >"$T/b.rc"
+parse "$T/b.jsonl" "$T/b.json"
+P="$T/b.json"
+if [ "$rc" -eq 0 ] && [ "$(jfield "$P" is_error 8)" = "False" ]; then
+  ok "claude -p 运行成功（rc=0，result.is_error=false）"
 else no "claude -p 失败（rc=$rc）：$(jfield "$P" terminal_reason 80) | $(tail -c 300 "$T/b.jsonl.err" | tr '\n' ' ')"; fi
 [ "$(jfield "$P" read_src 8)" = "True" ] && ok "模型 Read 了源 SKILL.md" || no "模型没有 Read 源 SKILL.md；它读过：$(jfield "$P" reads 300)"
 grep -qF -- "$RULE2" "$T/shared/shared.md" && ok "新规则写进了共享源 shared.md" || no "新规则没有进入 shared.md"
@@ -142,6 +167,8 @@ python3 "$SCOPE" check "$A" "$T/add-a-before.json" && python3 "$SCOPE" check "$B
   && ok "Add-or-update：两个项目仓的文件清单、内容、HEAD 和 Git 状态均未改变" || no "Add-or-update 碰了项目仓"
 grep -qF -- "@$T/shared/shared.md" "$CC/CLAUDE.md" && grep -qF -- "read $T/shared/shared.md in full" "$T/home/.codex/AGENTS.md" \
   && ok "两个 entry 的加载路由行仍在" || no "entry 的加载路由行被改坏"
-echo "-- B 模型报告（前 400 字）--"; jfield "$P" result 400; echo
+echo "-- B 模型报告（前 400 字）--"
+jfield "$P" result 400
+echo
 echo "== $PASS ok / $FAIL fail"
 [ "$FAIL" -eq 0 ]

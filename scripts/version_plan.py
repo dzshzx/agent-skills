@@ -42,7 +42,11 @@ def git(*args: str) -> str:
         ["git", *args], check=False, capture_output=True, text=True, encoding="utf-8"
     )
     if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+        detail = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or f"exit {result.returncode}"
+        )
         raise PlanError(f"git {' '.join(args)} failed: {detail}")
     return result.stdout
 
@@ -54,7 +58,9 @@ def normalize_repository(remote_url: str) -> str:
     else:
         parsed = urlparse(value)
         if parsed.scheme not in {"http", "https", "ssh", "git"} or not parsed.path:
-            raise PlanError(f"origin URL does not identify an owner/repository: {value!r}")
+            raise PlanError(
+                f"origin URL does not identify an owner/repository: {value!r}"
+            )
         path = parsed.path
     path = path.strip("/")
     if path.endswith(".git"):
@@ -67,7 +73,9 @@ def normalize_repository(remote_url: str) -> str:
 
 def parse_targets(values: list[str]) -> dict[str, Version]:
     if not values:
-        raise PlanError("the version plan is incomplete: at least one --target is required")
+        raise PlanError(
+            "the version plan is incomplete: at least one --target is required"
+        )
     targets: dict[str, Version] = {}
     for value in values:
         namespace, separator, version_text = value.partition("=")
@@ -161,7 +169,8 @@ def verify_annotated(tag_ref: str) -> None:
 def verify_tag_target(tag_ref: str, plan: dict[str, object]) -> None:
     tag_name = tag_ref.removeprefix("refs/tags/")
     planned_tags = {
-        f"{item['namespace']}{item['target']}" for item in plan["versions"]  # type: ignore[index]
+        f"{item['namespace']}{item['target']}"
+        for item in plan["versions"]  # type: ignore[index]
     }
     if tag_name not in planned_tags:
         raise PlanError(f"tag {tag_name!r} is absent from the current version plan")
@@ -179,7 +188,10 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--repository", required=True, help="expected owner/repository")
     result.add_argument("--remote", default="origin")
     result.add_argument(
-        "--target", action="append", default=[], metavar="NAMESPACE=X.Y.Z",
+        "--target",
+        action="append",
+        default=[],
+        metavar="NAMESPACE=X.Y.Z",
         help="complete target version set; repeat for independent namespaces",
     )
     result.add_argument("--tag-ref", help="annotated release tag ref to verify")

@@ -84,9 +84,13 @@ def validate() -> list[str]:
                 f"{skill_file.relative_to(ROOT)}: name {name!r} must match directory {skill_dir.name!r}"
             )
         if not NAME_PATTERN.fullmatch(name):
-            errors.append(f"{skill_file.relative_to(ROOT)}: invalid skill name {name!r}")
+            errors.append(
+                f"{skill_file.relative_to(ROOT)}: invalid skill name {name!r}"
+            )
         if not description:
-            errors.append(f"{skill_file.relative_to(ROOT)}: description must not be empty")
+            errors.append(
+                f"{skill_file.relative_to(ROOT)}: description must not be empty"
+            )
 
         text = skill_file.read_text(encoding="utf-8")
         if match := MACHINE_HOME_PATTERN.search(text):
@@ -118,9 +122,13 @@ def validate_shipped_files() -> list[str]:
     """Syntax-check every shell, JSON and TOML file a skill ships."""
     errors: list[str] = []
     for script in sorted(SKILLS_DIR.rglob("*.sh")):
-        result = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+        result = subprocess.run(
+            ["bash", "-n", str(script)], capture_output=True, text=True
+        )
         if result.returncode != 0:
-            errors.append(f"{script.relative_to(ROOT)}: bash -n failed: {result.stderr.strip()}")
+            errors.append(
+                f"{script.relative_to(ROOT)}: bash -n failed: {result.stderr.strip()}"
+            )
     for path in sorted(SKILLS_DIR.rglob("*.json")):
         try:
             json.loads(path.read_text(encoding="utf-8"))
@@ -142,7 +150,9 @@ def main() -> int:
         return 1
 
     count = sum(1 for path in SKILLS_DIR.iterdir() if path.is_dir())
-    print(f"Validated {count} skills, README inventory, and shipped shell/JSON/TOML syntax.")
+    print(
+        f"Validated {count} skills, README inventory, and shipped shell/JSON/TOML syntax."
+    )
     return 0
 
 

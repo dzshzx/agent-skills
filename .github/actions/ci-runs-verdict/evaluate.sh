@@ -19,7 +19,7 @@ emit() {
   local verdict="$1" detail="$2"
   echo "verdict: ${verdict} — ${detail}"
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-    echo "verdict=${verdict}" >> "$GITHUB_OUTPUT"
+    echo "verdict=${verdict}" >>"$GITHUB_OUTPUT"
   fi
   if [[ "$mode" == "require" && "$verdict" != "green" ]]; then
     exit 1
@@ -27,7 +27,7 @@ emit() {
   exit 0
 }
 
-deadline=$(( SECONDS + wait_seconds ))
+deadline=$((SECONDS + wait_seconds))
 while :; do
   # One line per ci.yml run for this sha: "<status> <conclusion>
   # <run_started_at> <url>"; conclusion is the literal "null" until status is
@@ -49,16 +49,16 @@ while :; do
   while read -r status conclusion started url run_id attempt; do
     [[ -n "$status" ]] || continue
     if [[ "$status" == "total" ]]; then
-      if ! [[ "$conclusion" =~ ^[0-9]+$ ]] ||
-        (( expected_count >= 0 && expected_count != conclusion )); then
+      if ! [[ "$conclusion" =~ ^[0-9]+$ ]] \
+        || ((expected_count >= 0 && expected_count != conclusion)); then
         emit query-error "CI result count changed or is invalid"
       fi
       expected_count="$conclusion"
       continue
     fi
     observed_count=$((observed_count + 1))
-    if ! [[ "$run_id" =~ ^[1-9][0-9]*$ && "$attempt" =~ ^[1-9][0-9]*$ ]] ||
-      [[ -n "${seen_runs[$run_id]:-}" ]]; then
+    if ! [[ "$run_id" =~ ^[1-9][0-9]*$ && "$attempt" =~ ^[1-9][0-9]*$ ]] \
+      || [[ -n "${seen_runs[$run_id]:-}" ]]; then
       emit query-error "malformed or duplicated CI run identity"
     fi
     seen_runs[$run_id]=1
@@ -70,18 +70,18 @@ while :; do
       if ! run_epoch="$(date -u -d "$started" +%s 2>/dev/null)"; then
         emit query-error "unparseable run_started_at '${started}' on ${url}"
       fi
-      if (( run_epoch > latest_success_epoch )); then
+      if ((run_epoch > latest_success_epoch)); then
         latest_success_epoch="$run_epoch"
       fi
     fi
-  done <<< "$runs"
-  if (( expected_count < 0 || observed_count != expected_count )); then
+  done <<<"$runs"
+  if ((expected_count < 0 || observed_count != expected_count)); then
     emit query-error "CI result set is incomplete (${observed_count}/${expected_count})"
   fi
-  if (( observed_count > 0 )) && [[ -z "$pending" ]]; then
+  if ((observed_count > 0)) && [[ -z "$pending" ]]; then
     break
   fi
-  if (( SECONDS >= deadline )); then
+  if ((SECONDS >= deadline)); then
     emit pending "not concluded after ${wait_seconds}s (last seen: ${pending:-no run registered})"
   fi
   echo "ci.yml for ${sha} is '${pending:-not registered yet}'; polling again in ${poll_seconds}s"
@@ -95,7 +95,7 @@ printf '%s\n' "$runs"
 
 if [[ -n "$max_age_hours" ]]; then
   cutoff="$(date -u -d "-${max_age_hours} hours" +%s)"
-  if (( latest_success_epoch < cutoff )); then
+  if ((latest_success_epoch < cutoff)); then
     emit stale "latest successful run started before the ${max_age_hours}h freshness window"
   fi
 fi
