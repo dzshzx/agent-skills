@@ -28,9 +28,20 @@ as well as coordination. Neither is a pure measure of delegation overhead.
 Optional `--prices prices.json` accepts:
 
 ```json
-{"as_of":"YYYY-MM-DD","currency":"USD","source":"price source URL or receipt",
- "rates":[{"model":"model-id","service_tier":"priority",
- "input_per_million":0,"cached_input_per_million":0,"output_per_million":0}]}
+{
+  "as_of": "YYYY-MM-DD",
+  "currency": "USD",
+  "source": "price source URL or receipt",
+  "rates": [
+    {
+      "model": "model-id",
+      "service_tier": "priority",
+      "input_per_million": 0,
+      "cached_input_per_million": 0,
+      "output_per_million": 0
+    }
+  ]
+}
 ```
 
 Supply verified prices for the actual model, date and service tier. Zero is only

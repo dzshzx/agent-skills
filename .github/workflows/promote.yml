@@ -10,7 +10,7 @@ on:
   workflow_run:
     workflows: [CI]
     types: [completed]
-    branches: ["candidate/**"]
+    branches: ['candidate/**']
   workflow_dispatch:
     inputs:
       candidate_sha:
@@ -63,7 +63,7 @@ jobs:
           sha: ${{ inputs.candidate_sha || github.event.workflow_run.head_sha }}
           token: ${{ github.token }}
           mode: require
-          wait-seconds: "900"
+          wait-seconds: '900'
       - name: Revalidate immediately before fast-forward
         uses: ./.github/actions/ci-runs-verdict
         with:

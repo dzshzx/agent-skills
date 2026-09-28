@@ -124,14 +124,14 @@ feature or running the same checks twice.
 
 These are optional, trimmable handoff notes, not a schema or a requirement for a status file:
 
-| Information | Example contents |
-| --- | --- |
-| Status | Running, blocked, awaiting acceptance, or accepted complete; note process failure or interruption and its cause separately |
-| Checkpoint | Current commit, input version, or identifiable artifact |
-| Progress | Completed and remaining work |
-| Action needed | Specific blocker or decision for the supervisor |
-| Evidence | Result, check output, and relevant log locations |
-| Continuation | Host task identifier and CLI session ID, when available |
+| Information   | Example contents                                                                                                           |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Status        | Running, blocked, awaiting acceptance, or accepted complete; note process failure or interruption and its cause separately |
+| Checkpoint    | Current commit, input version, or identifiable artifact                                                                    |
+| Progress      | Completed and remaining work                                                                                               |
+| Action needed | Specific blocker or decision for the supervisor                                                                            |
+| Evidence      | Result, check output, and relevant log locations                                                                           |
+| Continuation  | Host task identifier and CLI session ID, when available                                                                    |
 
 Delivery means **awaiting acceptance**; only the supervisor's completed checks establish
 **accepted complete**.

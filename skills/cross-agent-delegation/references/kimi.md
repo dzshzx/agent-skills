@@ -58,5 +58,6 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
 description: Read-only, no shell
 tools: [Read, Grep, Glob]
 ---
+
 Report what you find; you are not changing files.
 ```

@@ -17,6 +17,7 @@ claude -p --output-format json --permission-mode acceptEdits -- "$(cat "$BRIEF")
 
   Set `SESSION_ID` from the first result's `.session_id`, replace the brief with the follow-up,
   and allow only commands needed by the task under its existing authorization.
+
 - `--` before the prompt: a brief whose first line starts with `-` is otherwise parsed as an
   option (`error: unknown option '- …'`, exit 1, no model call). An empty prompt is rejected at
   the same stage. A start that fails before any API call — unknown model, missing credentials —

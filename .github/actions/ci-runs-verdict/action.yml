@@ -14,17 +14,17 @@ inputs:
     description: GitHub token with actions:read and statuses:read on this repository
     required: true
   mode:
-    description: "require: exit non-zero unless green. report: always exit zero."
+    description: 'require: exit non-zero unless green. report: always exit zero.'
     default: require
   wait-seconds:
     description: How long to keep polling for unconcluded runs (0 = single query)
-    default: "0"
+    default: '0'
   poll-seconds:
     description: Poll interval while waiting for unconcluded runs
-    default: "20"
+    default: '20'
   max-age-hours:
     description: If set, a green verdict older than this many hours becomes stale
-    default: ""
+    default: ''
 outputs:
   verdict:
     description: green | pending | failed | stale | query-error

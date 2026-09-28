@@ -21,7 +21,7 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   (default `~/.codex/sessions`) for the call and its completion/result; stdout JSONL alone
   cannot establish whether `view_image` ran.
 - Continue: `codex exec --sandbox <mode> resume --skip-git-repo-check --json -o "$SCRATCH/last.txt" -- <thread_id> "$(cat "$BRIEF")" </dev/null`,
-  with the id from the `thread.started` event. `--sandbox` is an `exec` option and goes *before*
+  with the id from the `thread.started` event. `--sandbox` is an `exec` option and goes _before_
   `resume` — after it, it is an unexpected argument (same rule as `review` below); `--skip-git-repo-check`,
   `--json` and `-o` are accepted after `resume`.
 - `--sandbox workspace-write` keeps `~/.codex` read-only even when `writable_roots` covers
@@ -42,9 +42,9 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   turn, so its wording trips the filter just the same — when harmless briefs keep failing,
   re-run with a stock config. Not a CLI failure — rephrase and re-dispatch.
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
-  `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes *before*
+  `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes _before_
   `review` — after it, it is an unexpected argument. A target and a custom prompt are exclusive:
-  `--uncommitted`, `--base <branch>` or `--commit <sha>` *or* a prompt argument, never both.
+  `--uncommitted`, `--base <branch>` or `--commit <sha>` _or_ a prompt argument, never both.
 
 ```bash
 codex exec --sandbox read-only review --uncommitted --json -o "$SCRATCH/last.txt" </dev/null

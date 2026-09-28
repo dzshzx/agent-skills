@@ -37,7 +37,7 @@ paths in the config may use `~` and `$VAR`.
   `"mandatory-entry-read"` = the entry carries an unconditional
   read-before-work instruction covering every `load = "always"` source);
   optional `agent_specific_file`, `skill_dirs`, `runtime_constructs`,
-  `readonly_project_surfaces` (surfaces owned by *other* configured agents
+  `readonly_project_surfaces` (surfaces owned by _other_ configured agents
   that this agent's runtime also auto-loads; each entry must match another
   agent's `project_instruction_file`; read visibility only, never edit
   rights or ownership).
@@ -83,12 +83,12 @@ gap. Remove the reference only after coverage is established.
    for the task that needs it; do not recreate a mandatory reading chain.
 4. Unsure → leave it local and flag it as a promotion candidate.
 
-| Rule applies to | Destination | Load |
-| --- | --- | --- |
-| every task, any domain | behavior contract | `always` |
-| every task, machine-dependent | machine facts | `always` |
-| one technical domain | that domain's slice | `on-demand` (trigger reachable from the entry: a pointer line there, or the trigger list in an `always` source the entry loads) |
-| only one agent | that agent's entry file (or `agent_specific_file`) | that owner's scope |
+| Rule applies to               | Destination                                        | Load                                                                                                                            |
+| ----------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| every task, any domain        | behavior contract                                  | `always`                                                                                                                        |
+| every task, machine-dependent | machine facts                                      | `always`                                                                                                                        |
+| one technical domain          | that domain's slice                                | `on-demand` (trigger reachable from the entry: a pointer line there, or the trigger list in an `always` source the entry loads) |
+| only one agent                | that agent's entry file (or `agent_specific_file`) | that owner's scope                                                                                                              |
 
 Anti-fragmentation: a new slice needs one cohesive theme that an entry file
 can point at with a single trigger sentence; below that, use a named section
