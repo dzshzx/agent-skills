@@ -58,10 +58,11 @@ bash skills/cross-agent-delegation/evals/live-check.sh --cli codex --smoke # tar
 ```
 
 Before committing, run `scripts/format.sh` to format tracked files in place
-(Python with ruff format, JS/TS with prettier, shell with shfmt; tool versions
+(Python with ruff format; JS/TS, Markdown, YAML and JSON with prettier; shell
+with shfmt; tool versions
 are pinned in the script, settings live in `ruff.toml`, `.prettierrc.json` and
 `.editorconfig`). `scripts/format.sh --check` only reports files that need
-formatting and exits non-zero. The reformat commit is listed in
+formatting and exits non-zero. Reformat commits are listed in
 `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs`
 so local blame skips it.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 统一格式化入口：Python 用 ruff format，JS/TS 用 prettier，Shell 用 shfmt。
+# 统一格式化入口：Python 用 ruff format，JS/TS 与 Markdown/YAML/JSON 用 prettier，Shell 用 shfmt。
 # 用法：scripts/format.sh [--check]
 #   无参数：就地格式化本仓跟踪的文件；--check：只检查，不一致时列出文件并非零退出（CI 用）。
 # 工具版本只在下方常量固定；各工具配置：ruff.toml、.prettierrc.json/.prettierignore、.editorconfig（shfmt）。
@@ -91,7 +91,8 @@ shfmt_bin() {
 }
 
 mapfile -d '' PY < <(files '*.py' '*.pyi')
-mapfile -d '' JS < <(files '*.js' '*.mjs' '*.cjs' '*.jsx' '*.ts' '*.mts' '*.cts' '*.tsx')
+mapfile -d '' PRETTIER < <(files '*.js' '*.mjs' '*.cjs' '*.jsx' '*.ts' '*.mts' '*.cts' '*.tsx' \
+  '*.md' '*.yml' '*.yaml' '*.json')
 mapfile -d '' SH < <(files '*.sh' '*.bash')
 
 FAIL=0
@@ -102,11 +103,11 @@ if [ ${#PY[@]} -gt 0 ]; then
     ruff format -- "${PY[@]}"
   fi
 fi
-if [ ${#JS[@]} -gt 0 ]; then
+if [ ${#PRETTIER[@]} -gt 0 ]; then
   if [ "$CHECK" -eq 1 ]; then
-    npm_config_loglevel=warn npx --yes "prettier@$PRETTIER_VERSION" --check -- "${JS[@]}" || FAIL=1
+    npm_config_loglevel=warn npx --yes "prettier@$PRETTIER_VERSION" --check -- "${PRETTIER[@]}" || FAIL=1
   else
-    npm_config_loglevel=warn npx --yes "prettier@$PRETTIER_VERSION" --write --log-level warn -- "${JS[@]}"
+    npm_config_loglevel=warn npx --yes "prettier@$PRETTIER_VERSION" --write --log-level warn -- "${PRETTIER[@]}"
   fi
 fi
 if [ ${#SH[@]} -gt 0 ]; then

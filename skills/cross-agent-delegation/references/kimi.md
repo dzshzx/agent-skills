@@ -39,8 +39,8 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
 - **Read-only comes from the tool set.** Without `--agent`, `-p` runs the full default set —
   `Write`, `Edit`, `ReadMediaFile` and the rest — so a plain dispatch reads images and writes
   files alike.
-  - `--agent explore` selects the vendor's built-in read-only agent — `Read, Grep, Glob, Bash,
-    ReadMediaFile, FetchURL, WebSearch` when asked to enumerate itself — with nothing to write
+  - `--agent explore` selects the vendor's built-in read-only agent —
+    `Read, Grep, Glob, Bash, ReadMediaFile, FetchURL, WebSearch` when asked to enumerate itself — with nothing to write
     beforehand: the shell returns, `Write` and `Edit` stay gone, and shell-borne writes ride on
     the brief. It reads images (`ReadMediaFile` delivers pixels, not bytes) and reaches the
     network.
