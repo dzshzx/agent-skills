@@ -62,9 +62,9 @@ The mechanical gate is `python scripts/validate_repository.py`,
 `bash skills/sync-agents-instructions/evals/check.sh` and
 `bash scripts/check-offline.sh` (entrypoint, validator, event-log and scope
 regressions with fixtures and fake CLIs), plus
-`bash scripts/check-commit-subjects.sh` (every commit subject in the pushed
-range is `type(scope): subject`, e.g. `fix(<skill>): …`; a bare `<skill>: …`
-prefix fails); CI runs exactly those.
+`bash scripts/check-commit-subjects.sh` (commitlint checks every commit in the
+pushed range against `commitlint.config.mjs`: the global Conventional Commits rule
+plus the `skill` type; needs Node for `npx`); CI runs exactly those.
 `--no-live` disables live calls regardless of argument order. `--all` and
 explicit skill names are mutually exclusive (usage error, exit 2).
 The summary states whether any `live-check.sh` was launched. `--no-live` and an

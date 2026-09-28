@@ -28,6 +28,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node for commitlint
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
       - name: Validate skill sources and inventory
         run: python scripts/validate_repository.py
 
@@ -40,7 +45,7 @@ jobs:
       - name: Check deterministic regressions without model calls
         run: bash scripts/check-offline.sh
 
-      - name: Check commit subjects follow type(scope) subject
+      - name: Check commit subjects with commitlint
         env:
           EVENT: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
