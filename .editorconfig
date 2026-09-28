@@ -1,0 +1,13 @@
+# 编辑器通用设置；shfmt 与 prettier 读取本文件（shfmt 选项仅在 [*.sh] 段）。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+switch_case_indent = true
+binary_next_line = true

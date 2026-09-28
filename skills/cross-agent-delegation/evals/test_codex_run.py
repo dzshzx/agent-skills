@@ -1,3 +1,4 @@
+import re
 import tempfile
 import unittest
 import json
@@ -88,7 +89,8 @@ class CliSelectionTests(unittest.TestCase):
 
     def test_retry_exhaustion_cannot_report_success(self):
         script = self.script.read_text()
-        wrapper = "  cx(){" + script.split("  cx(){", 1)[1].split("  # cerr", 1)[0]
+        # 按结构截取 cx 函数（至下一条 `# cerr` 注释），不依赖缩进与花括号前的空格。
+        wrapper = re.search(r"^[ \t]*cx\(\)\s*\{.*?(?=^[ \t]*# cerr)", script, re.M | re.S).group(0)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             fake = root / "fake-codex"

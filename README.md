@@ -57,6 +57,12 @@ scripts/verify.sh --all     # live checks for every skill, e.g. after an allowed
 bash skills/cross-agent-delegation/evals/live-check.sh --cli codex --smoke # targeted Codex contracts
 ```
 
+Before committing, run `scripts/format.sh` to format tracked files in place
+(Python with ruff format, JS/TS with prettier, shell with shfmt; tool versions
+are pinned in the script, settings live in `ruff.toml`, `.prettierrc.json` and
+`.editorconfig`). `scripts/format.sh --check` only reports files that need
+formatting and exits non-zero.
+
 The mechanical gate is `python scripts/validate_repository.py`,
 `shellcheck -S warning skills/*/evals/*.sh scripts/*.sh`,
 `bash skills/sync-agents-instructions/evals/check.sh` and

@@ -1,0 +1,4 @@
+# prettier 只经 scripts/format.sh 处理 JS/TS；以下为生成物与第三方目录。
+node_modules/
+vendor/
+dist/
