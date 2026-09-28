@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 标准验证流程（push 前跑）：机械门 + 真跑门。
 # 用法：scripts/verify.sh [--no-live] [--all | skill ...]
-#   机械门：validate_repository.py、shellcheck、sync fixtures、check-offline.sh、
+#   机械门：validate_repository.py、shellcheck、sync fixtures、check-offline.sh、format.sh --check、
 #           check-commit-subjects.sh（commitlint 校验 origin/master..HEAD 的提交标题）——与 CI 同一组命令。
 #   真跑门：对「相对 origin/master 有改动（含未提交）」的 skill 跑 skills/<name>/evals/live-check.sh；
 #           --all 跑全部 skill（查 CLI 版本漂移）；显式给 skill 名只跑那些；--no-live 只跑机械门。
@@ -46,6 +46,7 @@ run python3 scripts/validate_repository.py
 run shellcheck -S warning skills/*/evals/*.sh scripts/*.sh
 run bash skills/sync-agents-instructions/evals/check.sh
 run bash scripts/check-offline.sh
+run bash scripts/format.sh --check
 run bash scripts/check-commit-subjects.sh
 [ "$ALLOW_LIVE" -eq 0 ] && {
   echo

@@ -20,7 +20,7 @@ class VerifyTest(unittest.TestCase):
             Path(__file__).resolve().parents[1] / "verify.sh", scripts / "verify.sh"
         )
         (scripts / "validate_repository.py").write_text("pass\n")
-        for name in ("check-offline.sh", "check-commit-subjects.sh"):
+        for name in ("check-offline.sh", "check-commit-subjects.sh", "format.sh"):
             (scripts / name).write_text("exit 0\n")
         for name in ("alpha", "beta", "sync-agents-instructions"):
             directory = self.root / "skills" / name / "evals"

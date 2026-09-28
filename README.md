@@ -61,13 +61,15 @@ Before committing, run `scripts/format.sh` to format tracked files in place
 (Python with ruff format, JS/TS with prettier, shell with shfmt; tool versions
 are pinned in the script, settings live in `ruff.toml`, `.prettierrc.json` and
 `.editorconfig`). `scripts/format.sh --check` only reports files that need
-formatting and exits non-zero.
+formatting and exits non-zero. The reformat commit is listed in
+`.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs`
+so local blame skips it.
 
 The mechanical gate is `python scripts/validate_repository.py`,
 `shellcheck -S warning skills/*/evals/*.sh scripts/*.sh`,
 `bash skills/sync-agents-instructions/evals/check.sh` and
 `bash scripts/check-offline.sh` (entrypoint, validator, event-log and scope
-regressions with fixtures and fake CLIs), plus
+regressions with fixtures and fake CLIs), `bash scripts/format.sh --check`, plus
 `bash scripts/check-commit-subjects.sh` (commitlint checks every commit in the
 pushed range against `commitlint.config.mjs`: the global Conventional Commits rule
 plus the `skill` type; needs Node for `npx`); CI runs exactly those.
