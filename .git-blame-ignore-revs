@@ -2,3 +2,5 @@
 # 本地启用：git config blame.ignoreRevsFile .git-blame-ignore-revs（GitHub 网页 blame 自动读取）。
 # style: 按 scripts/format.sh 全量重排
 3e8cc068c8057e6572a29703a50445c92c2be0fd
+# style: 按 scripts/format.sh 重排 Markdown/YAML/JSON
+406194981efb7c95974bbcb8bfc4f29d0ed240f4
