@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["semver==3.1.0"]
 #
 # [tool.uv]
 # exclude-newer = "3 days"
@@ -15,11 +15,11 @@ import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
 from urllib.parse import urlparse
 
+import semver
 
-SEMVER_RE = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
+
 NAMESPACE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*\Z")
 
 
@@ -27,21 +27,26 @@ class PlanError(RuntimeError):
     """A version plan cannot be proven safe."""
 
 
-@dataclass(frozen=True, order=True)
-class Version:
-    major: int
-    minor: int
-    patch: int
+Version = semver.Version
 
-    @classmethod
-    def parse(cls, value: str) -> "Version":
-        match = SEMVER_RE.fullmatch(value)
-        if match is None:
-            raise PlanError(f"invalid SemVer version: {value!r}")
-        return cls(*(int(part) for part in match.groups()))
 
-    def __str__(self) -> str:
-        return f"{self.major}.{self.minor}.{self.patch}"
+def parse_version(value: str) -> Version:
+    """Parse a release version: strict X.Y.Z, no prefix, pre-release or build."""
+    try:
+        version = Version.parse(value)
+    except (TypeError, ValueError):
+        raise PlanError(f"invalid SemVer version: {value!r}") from None
+    if version.prerelease is not None or version.build is not None:
+        raise PlanError(f"invalid SemVer version: {value!r}")
+    return version
+
+
+def is_release_version(value: str) -> bool:
+    try:
+        parse_version(value)
+    except PlanError:
+        return False
+    return True
 
 
 def git(*args: str) -> str:
@@ -90,7 +95,7 @@ def parse_targets(values: list[str]) -> dict[str, Version]:
             raise PlanError(f"invalid target {value!r}; expected namespace=X.Y.Z")
         if namespace in targets:
             raise PlanError(f"duplicate version namespace: {namespace!r}")
-        targets[namespace] = Version.parse(version_text)
+        targets[namespace] = parse_version(version_text)
     return targets
 
 
@@ -129,8 +134,8 @@ def build_plan(
             if tag_name in excluded_tag_names or not tag_name.startswith(namespace):
                 continue
             suffix = tag_name[len(namespace) :]
-            if SEMVER_RE.fullmatch(suffix):
-                candidates.append(Version.parse(suffix))
+            if is_release_version(suffix):
+                candidates.append(parse_version(suffix))
         if not candidates:
             raise PlanError(
                 f"baseline for namespace {namespace!r} is unknown after excluding the current tag"

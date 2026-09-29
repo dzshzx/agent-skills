@@ -26,6 +26,21 @@ class VersionPlanTest(unittest.TestCase):
             '[{"baseline":"1.2.3","namespace":"v","target":"1.3.0"}]}',
         )
 
+    def test_release_versions_are_strict_semver(self):
+        self.assertEqual(str(version_plan.parse_version("10.0.1")), "10.0.1")
+        for value in ("v1.2.3", "1.2", "01.2.3", "1.2.3-rc.1", "1.2.3+build", " 1.2.3"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(version_plan.PlanError, "invalid SemVer"):
+                    version_plan.parse_version(value)
+
+    def test_baseline_ignores_prerelease_and_prefixed_tags(self):
+        plan = version_plan.build_plan(
+            "dzshzx/example",
+            {"v": version_plan.parse_version("1.2.4")},
+            {"v1.2.3", "v1.9.0-rc.1", "vv2.0.0", "v1.10.0+b"},
+        )
+        self.assertEqual(plan["versions"][0]["baseline"], "1.2.3")
+
     def test_repository_urls_normalize_to_owner_repo(self):
         for remote in (
             "https://github.com/DzShZx/agent-skills.git",
@@ -42,7 +57,7 @@ class VersionPlanTest(unittest.TestCase):
             with self.subTest(target=target):
                 plan = version_plan.build_plan(
                     "dzshzx/example",
-                    {"v": version_plan.Version.parse(target)},
+                    {"v": version_plan.parse_version(target)},
                     {"v1.2.3", f"v{target}", "unrelated-9.9.9"},
                     {f"v{target}"},
                 )
@@ -54,12 +69,12 @@ class VersionPlanTest(unittest.TestCase):
     def test_unknown_baseline_and_downgrade_fail_closed(self):
         with self.assertRaisesRegex(version_plan.PlanError, "baseline .* is unknown"):
             version_plan.build_plan(
-                "dzshzx/example", {"v": version_plan.Version.parse("1.0.0")}, set()
+                "dzshzx/example", {"v": version_plan.parse_version("1.0.0")}, set()
             )
         with self.assertRaisesRegex(version_plan.PlanError, "downgrade is not allowed"):
             version_plan.build_plan(
                 "dzshzx/example",
-                {"v": version_plan.Version.parse("1.2.2")},
+                {"v": version_plan.parse_version("1.2.2")},
                 {"v1.2.3"},
             )
 
@@ -67,7 +82,7 @@ class VersionPlanTest(unittest.TestCase):
         with self.assertRaisesRegex(version_plan.PlanError, "already published"):
             version_plan.build_plan(
                 "dzshzx/example",
-                {"v": version_plan.Version.parse("1.2.3")},
+                {"v": version_plan.parse_version("1.2.3")},
                 {"v1.2.2", "v1.2.3"},
             )
 

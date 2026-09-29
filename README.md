@@ -123,6 +123,11 @@ baseline-to-target change. Release levels:
 Unknown baselines and downgrades stop the release. A published tag is never
 moved or reused; fix a failed release with the next patch.
 
+`scripts/version_plan.py` (with its `.lock`) is also the shared release
+planner for other public repositories: they fetch both files from this
+repository at a full 40-character commit SHA and run them with
+`uv run --script --locked`, instead of keeping a copy.
+
 Then push the candidate and wait for CI on its exact SHA:
 
 ```bash

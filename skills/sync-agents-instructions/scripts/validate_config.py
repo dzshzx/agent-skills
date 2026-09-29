@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["pydantic==2.13.5"]
 #
 # [tool.uv]
 # exclude-newer = "3 days"
@@ -19,29 +19,27 @@ Usage: validate_config.py [--schema-only] [CONFIG]
 Exit 0: valid. Exit 1: errors, one per line on stderr. Exit 2: usage or unreadable config.
 """
 
-from __future__ import annotations
-
 import os
 import posixpath
 import re
 import sys
 import tomllib
 from pathlib import Path
+from typing import Annotated, Any
+
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    ValidationError,
+    ValidationInfo,
+    model_validator,
+)
+from pydantic_core import PydanticCustomError
 
 LOAD_MODES = {"always", "on-demand"}
 ALWAYS_LOAD_MODES = {"native", "mandatory-entry-read"}
-TOP_LEVEL = {"workspace", "shared_sources", "agents", "repository_exclusions"}
-WORKSPACE_REQUIRED = {"project_globs"}
-WORKSPACE_OPTIONAL = {"off_limits"}
-SHARED_SOURCE_KEYS = {"path", "role", "domain", "load"}
-AGENT_REQUIRED = {"name", "entry_file", "project_instruction_file", "always_load_mode"}
-AGENT_OPTIONAL = {
-    "agent_specific_file",
-    "skill_dirs",
-    "runtime_constructs",
-    "readonly_project_surfaces",
-}
-EXCLUSION_KEYS = {"glob", "reason"}
 # Variable syntax os.path.expandvars recognises on POSIX; an unterminated ${ is
 # matched too, because expandvars leaves it literal.
 ENV_REFERENCE = re.compile(r"\$(\w+|\{[^}]*\}?)", re.ASCII)
@@ -62,262 +60,298 @@ def normalize_repo_path(value: str) -> str:
     return posixpath.normpath(value)
 
 
+# --- field types: every failure carries the final one-line message -------------
+
+
+def fail(message: str) -> PydanticCustomError:
+    return PydanticCustomError("config", message)
+
+
+def non_empty_string(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise fail("must be a non-empty string")
+    return value
+
+
+def string_list(allow_empty: bool):
+    def check(value: object) -> list[str]:
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) or not item.strip() for item in value
+        ):
+            raise fail("must be a list of non-empty strings")
+        if not value and not allow_empty:
+            raise fail("must not be empty")
+        return value
+
+    return BeforeValidator(check)
+
+
+def one_of(choices: set[str]):
+    def check(value: object) -> str:
+        if not isinstance(value, str) or value not in choices:
+            raise fail(f"must be one of {sorted(choices)}")
+        return value
+
+    return BeforeValidator(check)
+
+
+def array_of_tables(required: bool):
+    def check(value: object) -> list:
+        if not isinstance(value, list) or any(
+            not isinstance(item, dict) for item in value
+        ):
+            raise fail("must be an array of tables ([[...]])")
+        if required and not value:
+            raise fail("must contain at least one entry")
+        return value
+
+    return BeforeValidator(check)
+
+
+def repo_surface(value: str) -> str:
+    """Validate one repo-relative surface path (value is already a non-empty string)."""
+    if value.startswith(("/", "~")) or ":" in value.split("/", 1)[0]:
+        raise fail("must be repo-relative, not absolute or ~-based")
+    if "\\" in value:
+        raise fail("must use / separators")
+    if value.endswith("/"):
+        raise fail("must name a file, not a directory")
+    normalized = normalize_repo_path(value)
+    if normalized in {".", ".."} or normalized.startswith("../"):
+        raise fail("must stay inside the repository")
+    return value
+
+
+def distinct_surfaces(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    for value in values:
+        normalized = normalize_repo_path(value)
+        if normalized in seen:
+            raise fail(f"{value!r} is listed more than once")
+        seen.add(normalized)
+    return values
+
+
+Text = Annotated[str, BeforeValidator(non_empty_string)]
+Surface = Annotated[Text, AfterValidator(repo_surface)]
+
+
+class Table(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+
+class Workspace(Table):
+    project_globs: Annotated[list[str], string_list(allow_empty=False)]
+    off_limits: Annotated[list[str], string_list(allow_empty=True)] = []
+
+    @model_validator(mode="after")
+    def off_limits_variables_expand(self, info: ValidationInfo) -> "Workspace":
+        """Every $VAR / ${VAR} must expand to a non-empty value, else the rule is void."""
+        report = info.context["report"]
+        where = "workspace.off_limits"
+        for value in self.off_limits:
+            for match in ENV_REFERENCE.finditer(value):
+                name = match.group(1)
+                if name.startswith("{"):
+                    if not name.endswith("}"):
+                        report(
+                            where,
+                            f"{value!r} has an unterminated variable reference {match.group(0)}",
+                        )
+                        continue
+                    name = name[1:-1]
+                if name not in os.environ:
+                    report(
+                        where,
+                        f"{value!r} references unset environment variable ${name}",
+                    )
+                elif not os.environ[name]:
+                    report(
+                        where,
+                        f"{value!r} references empty environment variable ${name}",
+                    )
+        return self
+
+
+class SharedSource(Table):
+    path: Text
+    role: Text
+    domain: Text
+    load: Annotated[str, one_of(LOAD_MODES)]
+
+
+class Agent(Table):
+    name: Text
+    entry_file: Text
+    project_instruction_file: Surface
+    always_load_mode: Annotated[str, one_of(ALWAYS_LOAD_MODES)]
+    agent_specific_file: Annotated[str | None, BeforeValidator(non_empty_string)] = None
+    skill_dirs: Annotated[list[str], string_list(allow_empty=True)] = []
+    runtime_constructs: Annotated[list[str], string_list(allow_empty=True)] = []
+    readonly_project_surfaces: Annotated[
+        list[Surface],
+        BeforeValidator(string_list(allow_empty=True).func),
+        AfterValidator(distinct_surfaces),
+    ] = []
+
+
+class RepositoryExclusion(Table):
+    glob: Text
+    reason: Text
+
+
+class Config(Table):
+    workspace: Workspace
+    shared_sources: Annotated[list[SharedSource], array_of_tables(required=True)]
+    agents: Annotated[list[Agent], array_of_tables(required=True)]
+    repository_exclusions: Annotated[
+        list[RepositoryExclusion], array_of_tables(required=False)
+    ] = []
+
+    @model_validator(mode="after")
+    def cross_entry_rules(self, info: ValidationInfo) -> "Config":
+        """Uniqueness, readonly-surface ownership and (unless schema-only) file existence."""
+        report = info.context["report"]
+        check_paths = info.context["check_paths"]
+
+        def file_exists(where: str, value: str) -> None:
+            if check_paths and not Path(normalize_machine_path(value)).is_file():
+                report(where, f"file not found: {value}")
+
+        seen: dict[str, str] = {}
+        for index, source in enumerate(self.shared_sources):
+            where = f"shared_sources[{index}]"
+            normalized = normalize_machine_path(source.path)
+            if normalized in seen:
+                report(
+                    f"{where}.path",
+                    f"normalizes to the same file as {seen[normalized]}",
+                )
+            seen[normalized] = where
+            file_exists(f"{where}.path", source.path)
+
+        names: dict[str, str] = {}
+        entries: dict[str, str] = {}
+        owners: dict[str, str] = {}
+        for index, agent in enumerate(self.agents):
+            where = f"agents[{index}]"
+            if agent.name in names:
+                report(f"{where}.name", f"duplicates {names[agent.name]}")
+            else:
+                names[agent.name] = where = f"agents[{agent.name}]"
+            normalized = normalize_machine_path(agent.entry_file)
+            if normalized in entries:
+                report(
+                    f"{where}.entry_file",
+                    f"normalizes to the same owner as {entries[normalized]}",
+                )
+            entries[normalized] = where
+            file_exists(f"{where}.entry_file", agent.entry_file)
+            owner = normalize_repo_path(agent.project_instruction_file)
+            if owner in owners:
+                report(
+                    f"{where}.project_instruction_file",
+                    f"normalizes to the same owner as {owners[owner]}",
+                )
+            owners[owner] = where
+            if agent.agent_specific_file is not None:
+                file_exists(f"{where}.agent_specific_file", agent.agent_specific_file)
+        for index, agent in enumerate(self.agents):
+            where = names.get(agent.name, f"agents[{index}]")
+            for surface in agent.readonly_project_surfaces:
+                owner = owners.get(normalize_repo_path(surface))
+                if owner is None:
+                    report(
+                        f"{where}.readonly_project_surfaces",
+                        f"{surface!r} is not another configured agent's project_instruction_file",
+                    )
+                elif owner == where:
+                    report(
+                        f"{where}.readonly_project_surfaces",
+                        f"{surface!r} is this agent's own surface",
+                    )
+        return self
+
+
+# --- error rendering -----------------------------------------------------------
+
+STRING_LIST_FIELDS = {
+    "project_globs",
+    "off_limits",
+    "skill_dirs",
+    "runtime_constructs",
+    "readonly_project_surfaces",
+}
+
+
+def render_location(data: object, loc: tuple) -> str:
+    """('agents', 0, 'name') -> 'agents[codex].name' when that agent has a valid name."""
+    parts: list[str] = []
+    node = data
+    for index, key in enumerate(loc):
+        if isinstance(key, int):
+            if index and loc[index - 1] in STRING_LIST_FIELDS:
+                break  # a list item reports on its list field
+            name = node[key].get("name") if isinstance(node, list) else None
+            label = (
+                name
+                if loc[index - 1] == "agents" and isinstance(name, str) and name.strip()
+                else key
+            )
+            parts[-1] += f"[{label}]"
+        else:
+            parts.append(str(key))
+        try:
+            node = node[key]  # type: ignore[index]
+        except (KeyError, IndexError, TypeError):
+            node = None
+    return ".".join(parts) or "(top level)"
+
+
 class Checker:
+    """Validate parsed TOML; run() returns 'where: message' strings, one per error."""
+
     def __init__(self, data: dict, check_paths: bool) -> None:
         self.data = data
         self.check_paths = check_paths
         self.errors: list[str] = []
 
-    def error(self, where: str, message: str) -> None:
-        self.errors.append(f"{where}: {message}")
-
-    # --- generic field helpers -------------------------------------------------
-
-    def table(
-        self,
-        where: str,
-        value: object,
-        required: set[str],
-        optional: set[str] = frozenset(),
-    ) -> dict:
-        if not isinstance(value, dict):
-            self.error(where, "must be a table")
-            return {}
-        for key in sorted(set(value) - required - optional):
-            self.error(where, f"unknown key {key!r}")
-        for key in sorted(required - set(value)):
-            self.error(where, f"missing required key {key!r}")
-        return value
-
-    def string(self, where: str, value: object) -> str | None:
-        if not isinstance(value, str) or not value.strip():
-            self.error(where, "must be a non-empty string")
-            return None
-        return value
-
-    def string_list(self, where: str, value: object, allow_empty: bool) -> list[str]:
-        if not isinstance(value, list) or any(
-            not isinstance(item, str) or not item.strip() for item in value
-        ):
-            self.error(where, "must be a list of non-empty strings")
-            return []
-        if not value and not allow_empty:
-            self.error(where, "must not be empty")
-        return value
-
-    def file_exists(self, where: str, value: str) -> None:
-        if self.check_paths and not Path(normalize_machine_path(value)).is_file():
-            self.error(where, f"file not found: {value}")
-
-    def array_of_tables(self, key: str, required: bool) -> list[dict]:
-        value = self.data.get(key)
-        if value is None:
-            if required:
-                self.error(key, "missing required array of tables")
-            return []
-        if not isinstance(value, list) or any(
-            not isinstance(item, dict) for item in value
-        ):
-            self.error(key, "must be an array of tables ([[...]])")
-            return []
-        if required and not value:
-            self.error(key, "must contain at least one entry")
-        return value
-
-    # --- sections ----------------------------------------------------------------
+    def report(self, where: str, message: str) -> None:
+        line = f"{where}: {message}"
+        if line not in self.errors:
+            self.errors.append(line)
 
     def run(self) -> list[str]:
-        self.table(
-            "(top level)",
-            self.data,
-            {"workspace", "shared_sources", "agents"},
-            TOP_LEVEL,
-        )
-        self.workspace()
-        self.shared_sources()
-        self.agents()
-        self.repository_exclusions()
-        return self.errors
-
-    def workspace(self) -> None:
-        ws = self.table(
-            "workspace",
-            self.data.get("workspace"),
-            WORKSPACE_REQUIRED,
-            WORKSPACE_OPTIONAL,
-        )
-        if "project_globs" in ws:
-            self.string_list(
-                "workspace.project_globs", ws["project_globs"], allow_empty=False
+        if not isinstance(self.data, dict):
+            self.report("(top level)", "must be a table")
+            return self.errors
+        try:
+            Config.model_validate(
+                self.data,
+                context={"report": self.report, "check_paths": self.check_paths},
             )
-        if "off_limits" in ws:
-            for pattern in self.string_list(
-                "workspace.off_limits", ws["off_limits"], allow_empty=True
-            ):
-                self.env_references("workspace.off_limits", pattern)
-
-    def env_references(self, where: str, value: str) -> None:
-        """Reject $VAR / ${VAR} references that would not expand to a non-empty value."""
-        for match in ENV_REFERENCE.finditer(value):
-            name = match.group(1)
-            if name.startswith("{"):
-                if not name.endswith("}"):
-                    self.error(
-                        where,
-                        f"{value!r} has an unterminated variable reference {match.group(0)}",
+        except ValidationError as error:
+            for item in error.errors():
+                loc = tuple(item["loc"])
+                if item["type"] == "missing":
+                    self.report(
+                        render_location(self.data, loc[:-1]),
+                        f"missing required key {loc[-1]!r}",
                     )
-                    continue
-                name = name[1:-1]
-            if name not in os.environ:
-                self.error(
-                    where, f"{value!r} references unset environment variable ${name}"
-                )
-            elif not os.environ[name]:
-                self.error(
-                    where, f"{value!r} references empty environment variable ${name}"
-                )
-
-    def shared_sources(self) -> None:
-        seen: dict[str, str] = {}
-        for index, entry in enumerate(
-            self.array_of_tables("shared_sources", required=True)
-        ):
-            where = f"shared_sources[{index}]"
-            entry = self.table(where, entry, SHARED_SOURCE_KEYS)
-            for key in ("role", "domain"):
-                if key in entry:
-                    self.string(f"{where}.{key}", entry[key])
-            if "load" in entry and (
-                not isinstance(entry["load"], str) or entry["load"] not in LOAD_MODES
-            ):
-                self.error(f"{where}.load", f"must be one of {sorted(LOAD_MODES)}")
-            path = (
-                self.string(f"{where}.path", entry.get("path"))
-                if "path" in entry
-                else None
-            )
-            if path is None:
-                continue
-            normalized = normalize_machine_path(path)
-            if normalized in seen:
-                self.error(
-                    f"{where}.path",
-                    f"normalizes to the same file as {seen[normalized]}",
-                )
-            seen[normalized] = where
-            self.file_exists(f"{where}.path", path)
-
-    def agents(self) -> None:
-        agents = self.array_of_tables("agents", required=True)
-        names: dict[str, str] = {}
-        entries: dict[str, str] = {}
-        owners: dict[str, str] = {}
-        readonly: list[tuple[str, str, str]] = []
-        for index, entry in enumerate(agents):
-            where = f"agents[{index}]"
-            entry = self.table(where, entry, AGENT_REQUIRED, AGENT_OPTIONAL)
-            name = (
-                self.string(f"{where}.name", entry["name"]) if "name" in entry else None
-            )
-            if name is not None:
-                if name in names:
-                    self.error(f"{where}.name", f"duplicates {names[name]}")
+                elif item["type"] == "extra_forbidden":
+                    self.report(
+                        render_location(self.data, loc[:-1]),
+                        f"unknown key {loc[-1]!r}",
+                    )
+                elif item["type"] in {
+                    "model_type",
+                    "model_attributes_type",
+                    "dict_type",
+                }:
+                    self.report(render_location(self.data, loc), "must be a table")
                 else:
-                    names[name] = where = f"agents[{name}]"
-            if "entry_file" in entry and (
-                entry_file := self.string(f"{where}.entry_file", entry["entry_file"])
-            ):
-                normalized = normalize_machine_path(entry_file)
-                if normalized in entries:
-                    self.error(
-                        f"{where}.entry_file",
-                        f"normalizes to the same owner as {entries[normalized]}",
-                    )
-                entries[normalized] = where
-                self.file_exists(f"{where}.entry_file", entry_file)
-            if "project_instruction_file" in entry:
-                owner = self.owner_surface(where, entry["project_instruction_file"])
-                if owner is not None:
-                    if owner in owners:
-                        self.error(
-                            f"{where}.project_instruction_file",
-                            f"normalizes to the same owner as {owners[owner]}",
-                        )
-                    owners[owner] = where
-            if "always_load_mode" in entry and (
-                not isinstance(entry["always_load_mode"], str)
-                or entry["always_load_mode"] not in ALWAYS_LOAD_MODES
-            ):
-                self.error(
-                    f"{where}.always_load_mode",
-                    f"must be one of {sorted(ALWAYS_LOAD_MODES)}",
-                )
-            if "agent_specific_file" in entry and (
-                specific := self.string(
-                    f"{where}.agent_specific_file", entry["agent_specific_file"]
-                )
-            ):
-                self.file_exists(f"{where}.agent_specific_file", specific)
-            for key in ("skill_dirs", "runtime_constructs"):
-                if key in entry:
-                    self.string_list(f"{where}.{key}", entry[key], allow_empty=True)
-            if "readonly_project_surfaces" in entry:
-                field = f"{where}.readonly_project_surfaces"
-                seen_readonly: set[str] = set()
-                for surface in self.string_list(
-                    field, entry["readonly_project_surfaces"], allow_empty=True
-                ):
-                    normalized = self.repo_surface(field, surface)
-                    if normalized is None:
-                        continue
-                    if normalized in seen_readonly:
-                        self.error(field, f"{surface!r} is listed more than once")
-                    seen_readonly.add(normalized)
-                    readonly.append((where, surface, normalized))
-        for where, surface, normalized in readonly:
-            owner = owners.get(normalized)
-            if owner is None:
-                self.error(
-                    f"{where}.readonly_project_surfaces",
-                    f"{surface!r} is not another configured agent's project_instruction_file",
-                )
-            elif owner == where:
-                self.error(
-                    f"{where}.readonly_project_surfaces",
-                    f"{surface!r} is this agent's own surface",
-                )
-
-    def owner_surface(self, where: str, value: object) -> str | None:
-        return self.repo_surface(f"{where}.project_instruction_file", value)
-
-    def repo_surface(self, field: str, value: object) -> str | None:
-        """Validate one repo-relative surface path; return its normalized form or None."""
-        surface = self.string(field, value)
-        if surface is None:
-            return None
-        if surface.startswith(("/", "~")) or ":" in surface.split("/", 1)[0]:
-            self.error(field, "must be repo-relative, not absolute or ~-based")
-            return None
-        if "\\" in surface:
-            self.error(field, "must use / separators")
-            return None
-        if surface.endswith("/"):
-            self.error(field, "must name a file, not a directory")
-            return None
-        normalized = normalize_repo_path(surface)
-        if normalized in {".", ".."} or normalized.startswith("../"):
-            self.error(field, "must stay inside the repository")
-            return None
-        return normalized
-
-    def repository_exclusions(self) -> None:
-        for index, entry in enumerate(
-            self.array_of_tables("repository_exclusions", required=False)
-        ):
-            where = f"repository_exclusions[{index}]"
-            entry = self.table(where, entry, EXCLUSION_KEYS)
-            for key in EXCLUSION_KEYS & set(entry):
-                self.string(f"{where}.{key}", entry[key])
+                    self.report(render_location(self.data, loc), item["msg"])
+        return self.errors
 
 
 def main(argv: list[str]) -> int:

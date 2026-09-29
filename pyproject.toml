@@ -5,7 +5,11 @@
 name = "agent-skills-dev"
 version = "0.0.0"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+  "pydantic==2.13.5",
+  "python-frontmatter==1.3.0",
+  "semver==3.1.0",
+]
 
 [tool.uv]
 package = false

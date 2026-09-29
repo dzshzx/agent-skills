@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = []
+# dependencies = ["python-frontmatter==1.3.0"]
 #
 # [tool.uv]
 # exclude-newer = "3 days"
@@ -23,6 +23,9 @@ import sys
 import tomllib
 from pathlib import Path
 
+import frontmatter as frontmatter_lib
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
@@ -33,30 +36,21 @@ MACHINE_HOME_PATTERN = re.compile(r"(?:/home/|/Users/|[A-Za-z]:\\Users\\)[^/\\\s
 
 
 def frontmatter(skill_file: Path) -> dict[str, str]:
-    lines = skill_file.read_text(encoding="utf-8").splitlines()
+    text = skill_file.read_text(encoding="utf-8")
+    lines = text.splitlines()
     if not lines or lines[0] != "---":
         raise ValueError("must start with YAML frontmatter")
-
+    if "---" not in lines[1:]:
+        raise ValueError("frontmatter is missing its closing delimiter")
     try:
-        end = lines.index("---", 1)
-    except ValueError as error:
-        raise ValueError("frontmatter is missing its closing delimiter") from error
-
-    fields: dict[str, str] = {}
-    current_key: str | None = None
-    for line in lines[1:end]:
-        if line.startswith((" ", "\t")):
-            if current_key is not None:
-                fields[current_key] = f"{fields[current_key]} {line.strip()}".strip()
-            continue
-
-        match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)", line)
-        if match is None:
-            raise ValueError(f"unsupported frontmatter line: {line!r}")
-        current_key, value = match.groups()
-        fields[current_key] = "" if value in {">", ">-", "|", "|-"} else value.strip()
-
-    return fields
+        metadata = frontmatter_lib.loads(text).metadata
+    except yaml.YAMLError as error:
+        detail = " ".join(str(error).split())
+        raise ValueError(f"invalid YAML frontmatter: {detail}") from error
+    return {
+        str(key): "" if value is None else " ".join(str(value).split())
+        for key, value in metadata.items()
+    }
 
 
 def validate() -> list[str]:
