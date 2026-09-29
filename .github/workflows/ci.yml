@@ -60,3 +60,24 @@ jobs:
         run: |
           if [ "$EVENT" = pull_request ]; then RANGE="origin/$BASE..HEAD"; else RANGE="$BEFORE..$GITHUB_SHA"; fi
           bash scripts/check-commit-subjects.sh "$RANGE"
+
+  # The master ruleset requires this one check on every pushed SHA. It runs even
+  # when a needed job fails or is skipped, and succeeds only if every needed job
+  # succeeded, so adding or renaming jobs never touches the ruleset.
+  ci-ok:
+    if: always()
+    needs: [validate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every needed job to succeed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          printf '%s\n' "$NEEDS"
+          [ -n "$RESULTS" ] || exit 1
+          for result in $RESULTS; do
+            [ "$result" = success ] || { echo "::error::a needed job concluded $result"; exit 1; }
+          done
