@@ -37,9 +37,9 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
   `[[agents]]` entry declares its own `project_instruction_file`; a surface
   may not import, defer to, or treat another owner’s surface as authority.
 - Changes reach `master` only as green candidates: push the clean, rebased
-  commit with `scripts/candidate.sh` (a `candidate/**` branch), CI runs on it,
-  and `promote.yml` fast-forwards `master` to that exact sha. The `master`
-  ruleset requires the `validate` check on every pushed sha, so `skills add`
+  commit with the global `land` command (a `candidate/**` branch), CI runs on
+  it, and `land` fast-forwards `master` to that exact sha. The `master`
+  ruleset requires the `ci-ok` check on every pushed sha, so `skills add`
   never installs an unverified `master`. Release candidates are tagged from
   `master` afterwards: create the annotated `vX.Y.Z` tag on that exact commit.
   Published tags are immutable and never reused; a failed release is fixed in
@@ -131,7 +131,7 @@ repository at a full 40-character commit SHA and run them with
 Then push the candidate and wait for CI on its exact SHA:
 
 ```bash
-scripts/candidate.sh
+land
 ```
 
 After promotion, tag the exact green master SHA and push the annotated tag:
