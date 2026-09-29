@@ -11,12 +11,50 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a PR run superseded by a newer commit on the same PR is cancelled;
+  # candidate, master and dispatch runs always finish.
+  group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  validate:
+  # land tests each SHA on candidate/** and then fast-forwards master to it, so
+  # the master push would rerun identical code. Only on default-branch pushes,
+  # skip the work when this SHA already has a successful ci-ok from another run;
+  # every other event skips this job and runs in full. Dependabot rebase merges
+  # produce new SHAs with no prior ci-ok and still run in full. A failed query
+  # yields tested=false: an extra run beats a missed one.
+  dedupe:
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: read
+    outputs:
+      tested: ${{ steps.check.outputs.tested }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          tested=false
+          # details_url of an Actions check run is .../actions/runs/<run_id>/job/<job_id>;
+          # this run's own ci-ok never counts.
+          if ids=$(gh api --paginate "repos/$REPO/commits/$SHA/check-runs?check_name=ci-ok&per_page=100" \
+            --jq ".check_runs[] | select(.conclusion == \"success\") | select((.details_url // \"\") | test(\"/actions/runs/$RUN_ID/\") | not) | .id"); then
+            if [ -n "$ids" ]; then tested=true; fi
+          else
+            echo "::warning::check-run query failed; running the full gate"
+          fi
+          echo "tested=$tested" | tee -a "$GITHUB_OUTPUT"
+
+  validate:
+    needs: dedupe
+    if: ${{ !cancelled() && needs.dedupe.outputs.tested != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,11 +100,13 @@ jobs:
           bash scripts/check-commit-subjects.sh "$RANGE"
 
   # The master ruleset requires this one check on every pushed SHA. It runs even
-  # when a needed job fails or is skipped, and succeeds only if every needed job
-  # succeeded, so adding or renaming jobs never touches the ruleset.
+  # when a needed job fails or is skipped. dedupe must succeed or be skipped;
+  # when it found this SHA already verified, the check passes, otherwise every
+  # other needed job must have succeeded, so adding or renaming jobs never
+  # touches the ruleset.
   ci-ok:
     if: always()
-    needs: [validate]
+    needs: [dedupe, validate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -74,10 +114,20 @@ jobs:
       - name: Require every needed job to succeed
         env:
           NEEDS: ${{ toJSON(needs) }}
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          DEDUPE_RESULT: ${{ needs.dedupe.result }}
+          TESTED: ${{ needs.dedupe.outputs.tested }}
         run: |
           printf '%s\n' "$NEEDS"
-          [ -n "$RESULTS" ] || exit 1
-          for result in $RESULTS; do
-            [ "$result" = success ] || { echo "::error::a needed job concluded $result"; exit 1; }
+          case "$DEDUPE_RESULT" in
+            success | skipped) ;;
+            *) echo "::error::dedupe concluded $DEDUPE_RESULT"; exit 1 ;;
+          esac
+          if [ "$TESTED" = true ]; then
+            echo "该 SHA 已由 candidate 运行验证"
+            exit 0
+          fi
+          results=$(jq -r 'to_entries[] | select(.key != "dedupe") | "\(.key)=\(.value.result)"' <<<"$NEEDS")
+          [ -n "$results" ] || exit 1
+          for entry in $results; do
+            [ "${entry#*=}" = success ] || { echo "::error::needed job ${entry%%=*} concluded ${entry#*=}"; exit 1; }
           done

@@ -10,6 +10,11 @@ permissions:
 
 jobs:
   ci:
+    # ci.yml's dedupe job declares checks: read; a caller must grant every
+    # permission a nested job requests, even when that job is skipped.
+    permissions:
+      contents: read
+      checks: read
     uses: ./.github/workflows/ci.yml
 
   verify-tag:
