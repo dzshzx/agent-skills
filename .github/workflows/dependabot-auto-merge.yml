@@ -1,0 +1,30 @@
+name: dependabot-auto-merge
+
+# Dependabot patch/minor PRs are queued for auto-merge; GitHub merges them
+# once the required ci-ok check passes. Major updates stay for manual review.
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge for patch/minor updates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          # Dependabot writes an update-type line per dependency into the
+          # commit message metadata block; merge only if all are patch/minor.
+          types=$(gh pr view "$PR_URL" --json commits --jq '.commits[].messageBody' |
+            grep -oE 'update-type: version-update:semver-[a-z]+' | sed 's/.*semver-//' | sort -u)
+          echo "update types: ${types:-none}"
+          if [ -z "$types" ] || grep -qvxE 'patch|minor' <<<"$types"; then
+            echo "not a patch/minor-only update; leaving for manual review"
+            exit 0
+          fi
+          gh pr merge "$PR_URL" --auto --rebase

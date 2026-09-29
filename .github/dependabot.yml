@@ -1,0 +1,25 @@
+# Dependency update policy: fleet-state ADR 0048.
+# patch/minor grouped per ecosystem weekly (auto-merged after ci-ok); major as separate PRs.
+version: 2
+updates:
+  - package-ecosystem: 'uv'
+    directories:
+      - '/'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 3
+    groups:
+      uv-minor-patch:
+        update-types: ['minor', 'patch']
+  - package-ecosystem: 'github-actions'
+    directories:
+      - '/'
+      - '/.github/actions/*'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 3
+    groups:
+      github-actions-minor-patch:
+        update-types: ['minor', 'patch']
