@@ -22,6 +22,15 @@ jobs:
           # commit message metadata block; merge only if all are patch/minor.
           types=$(gh pr view "$PR_URL" --json commits --jq '.commits[].messageBody' |
             grep -oE 'update-type: version-update:semver-[a-z]+' | sed 's/.*semver-//' | sort -u)
+          if [ -z "$types" ]; then
+            # Security-update PRs carry no update-type; derive it from the
+            # "from X to Y" title (same major => not a major update).
+            title=$(gh pr view "$PR_URL" --json title --jq .title)
+            if [[ $title =~ from\ v?([0-9]+)\.[^\ ]*\ to\ v?([0-9]+)\. ]] &&
+              [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]; then
+              types=minor
+            fi
+          fi
           echo "update types: ${types:-none}"
           if [ -z "$types" ] || grep -qvxE 'patch|minor' <<<"$types"; then
             echo "not a patch/minor-only update; leaving for manual review"

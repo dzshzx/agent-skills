@@ -16,6 +16,9 @@ updates:
     directories:
       - '/'
       - '/.github/actions/*'
+    ignore:
+      # Own actions are pinned by the repos' pin-bump flow; Dependabot cannot read private repos.
+      - dependency-name: 'dzshzx/*'
     schedule:
       interval: 'weekly'
     cooldown:
