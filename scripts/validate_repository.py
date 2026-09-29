@@ -1,4 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "3 days"
+# ///
 """Validate the repository invariants required before publishing a skill tag.
 
 Checks skill frontmatter, README inventory, machine-specific paths, relative

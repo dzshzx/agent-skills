@@ -379,7 +379,7 @@ for line in open(sys.argv[1]):
         printf '%s\n' "$rc" >"$out.rc"
         if ! grep -q 'flagged for possible cybersecurity risk' "$out" "$E" 2>/dev/null; then
           [ "$rc" -eq 0 ] || return "$rc"
-          if has --json "$*"; then python3 "$HERE/check_codex_run.py" "$out" "$rc" "$final" || return 1; fi
+          if has --json "$*"; then uv run --locked --project "$HERE/../../.." python "$HERE/check_codex_run.py" "$out" "$rc" "$final" || return 1; fi
           return "$rc"
         fi
         cp "$out" "$out.attempt-$n"
@@ -447,7 +447,7 @@ PY
     cx "$P" "$P/ro.jsonl" codex exec --skip-git-repo-check --sandbox read-only --json -o "$P/ro-final.txt" -- "Write a text file at $P/ro.txt whose content is the word hi, then confirm in one sentence."
     rc=$?
     [ "$rc" -eq 0 ] && [ ! -f "$P/ro.txt" ] \
-      && python3 "$HERE/check_codex_run.py" --posture "$P/ro.jsonl" read-only \
+      && uv run --locked --project "$HERE/../../.." python "$HERE/check_codex_run.py" --posture "$P/ro.jsonl" read-only \
       && ok "read-only：运行成功且文件未产生；此断言不证明 OS 拒写" || no "read-only 下产生了文件或运行异常（rc=$rc）：$(cerr "$P/ro.jsonl")"
     cx "$P" "$P/rw.jsonl" codex exec --skip-git-repo-check --sandbox workspace-write --json -o "$P/rw-final.txt" -- "Write a text file at $P/rw.txt whose content is the word hi, then confirm in one sentence."
     rc=$?

@@ -1,0 +1,13 @@
+# Repository tooling environment: offline regressions and eval helpers run
+# through `uv run --locked`. Shipped skill scripts carry their own PEP 723
+# header and `*.py.lock` instead.
+[project]
+name = "agent-skills-dev"
+version = "0.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.uv]
+package = false
+# ADR 0048: project dependencies wait 3 days after release.
+exclude-newer = "3 days"

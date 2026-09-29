@@ -42,7 +42,7 @@ run() {
 }
 
 echo "#### 机械门（与 CI 相同）"
-run python3 scripts/validate_repository.py
+run scripts/validate_repository.py
 run shellcheck -S warning skills/*/evals/*.sh scripts/*.sh
 run bash skills/sync-agents-instructions/evals/check.sh
 run bash scripts/check-offline.sh

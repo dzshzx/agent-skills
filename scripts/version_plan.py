@@ -1,4 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "3 days"
+# ///
 """Print and verify a release version plan (baseline -> target) from remote tags."""
 
 from __future__ import annotations

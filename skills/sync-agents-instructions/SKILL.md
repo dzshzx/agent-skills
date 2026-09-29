@@ -45,8 +45,8 @@ paths in the config may use `~` and `$VAR`.
 - `[[repository_exclusions]]` — `glob` + `reason`; the only way to exempt a
   repo candidate. Do not prune heuristically.
 
-Validate the config before acting: run `python3 scripts/validate_config.py
-<config>` from this skill's directory (`${CLAUDE_SKILL_DIR}` on Claude Code;
+Validate the config before acting: run `uv run --script --locked
+scripts/validate_config.py <config>` from this skill's directory (`${CLAUDE_SKILL_DIR}` on Claude Code;
 the directory containing this SKILL.md elsewhere). It checks the schema
 above, rejects unknown keys, two agents or surfaces normalizing to the same
 owner, `readonly_project_surfaces` that name no other configured owner, and

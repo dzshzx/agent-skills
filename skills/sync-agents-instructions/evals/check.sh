@@ -11,7 +11,7 @@ FAIL=0
 run() { # run <rc> <file> <substring-that-stderr-must-contain|""> [validator flags...]
   local want=$1 file=$2 needle=$3 err rc
   shift 3
-  err=$(python3 "$V" "$@" "$file" 2>&1 >/dev/null)
+  err=$(uv run --script --locked "$V" "$@" "$file" 2>&1 >/dev/null)
   rc=$?
   if [ "$rc" -ne "$want" ]; then
     printf 'FAIL %s: rc=%s want %s\n%s\n' "$file" "$rc" "$want" "$err"

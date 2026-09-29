@@ -109,17 +109,20 @@ def ran(data: dict, kind: str) -> bool:
             ):
                 return True
         elif kind == "validator":
-            if any(
-                p[:1] == ["python3"]
-                and len(p) > 1
-                and Path(p[1]).name == "validate_config.py"
-                for p in parts
-            ):
-                if all(p[0] in ("cd", "python3") for p in parts) and call[
-                    "output"
-                ].startswith("OK: "):
+            runs = [p for p in parts if validator_target(p)]
+            if runs and all(p[0] == "cd" or validator_target(p) for p in parts):
+                if call["output"].startswith("OK: "):
                     return True
     return False
+
+
+def validator_target(p):
+    """True when p runs validate_config.py via its locked uv entry or python3."""
+    if p[:4] == ["uv", "run", "--script", "--locked"]:
+        p = p[4:]
+    elif p[:1] == ["python3"]:
+        p = p[1:]
+    return len(p) >= 1 and Path(p[0]).name == "validate_config.py"
 
 
 if __name__ == "__main__":

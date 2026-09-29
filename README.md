@@ -105,7 +105,7 @@ credential copies are removed on exit.
 Before changing a release version, print the complete read-only version plan:
 
 ```bash
-python scripts/version_plan.py plan \
+scripts/version_plan.py plan \
   --repository dzshzx/agent-skills \
   --target v=X.Y.Z
 ```

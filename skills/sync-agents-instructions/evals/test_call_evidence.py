@@ -79,6 +79,8 @@ class EvidenceTests(unittest.TestCase):
     def test_validator_needs_completed_output(self):
         command = "cd /tmp/skill && python3 scripts/validate_config.py /tmp/config"
         self.assertTrue(ran(self.evidence(command, "OK: /tmp/config"), "validator"))
+        locked = "cd /tmp/skill && uv run --script --locked scripts/validate_config.py /tmp/config"
+        self.assertTrue(ran(self.evidence(locked, "OK: /tmp/config"), "validator"))
         self.assertFalse(
             ran(self.evidence(command, "ERROR: invalid", failed=True), "validator")
         )

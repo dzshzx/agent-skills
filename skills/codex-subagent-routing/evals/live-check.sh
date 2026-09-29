@@ -11,4 +11,4 @@
 # Green proves these assertions only, not general delegation quality or OS isolation.
 set -euo pipefail
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-exec python3 "$HERE/live_check.py" "$@"
+exec uv run --locked --project "$HERE/../../.." python "$HERE/live_check.py" "$@"

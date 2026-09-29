@@ -1,4 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "3 days"
+# ///
 """Validate a sync-agents-instructions machine config against the schema in SKILL.md.
 
 Usage: validate_config.py [--schema-only] [CONFIG]

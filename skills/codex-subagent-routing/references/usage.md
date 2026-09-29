@@ -1,6 +1,6 @@
 # Usage report
 
-Run `python3 scripts/usage_report.py --sessions <rollout-directory> --thread <id> --json <output.json>`
+Run `uv run --script --locked scripts/usage_report.py --sessions <rollout-directory> --thread <id> --json <output.json>`
 from this skill directory. Descendants are included. Optional `--since` and
 `--until` take timezone-qualified ISO timestamps (inclusive/exclusive).
 Omit `--thread` for all observed threads within the time range.

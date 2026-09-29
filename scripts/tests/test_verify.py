@@ -19,7 +19,9 @@ class VerifyTest(unittest.TestCase):
         shutil.copyfile(
             Path(__file__).resolve().parents[1] / "verify.sh", scripts / "verify.sh"
         )
-        (scripts / "validate_repository.py").write_text("pass\n")
+        validator = scripts / "validate_repository.py"
+        validator.write_text("#!/bin/sh\nexit 0\n")
+        validator.chmod(0o755)
         for name in ("check-offline.sh", "check-commit-subjects.sh", "format.sh"):
             (scripts / name).write_text("exit 0\n")
         for name in ("alpha", "beta", "sync-agents-instructions"):
