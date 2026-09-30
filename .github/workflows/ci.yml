@@ -23,14 +23,18 @@ jobs:
   # every other event skips this job and runs in full. Dependabot rebase merges
   # produce new SHAs with no prior ci-ok and still run in full. A failed query
   # yields tested=false: an extra run beats a missed one.
+  # A release tag push reaches this workflow only through release.yml's
+  # workflow_call and takes the same skip: the tagged SHA is on master, so it
+  # normally carries a ci-ok from its candidate or master run.
   dedupe:
-    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: github.event_name == 'push' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       checks: read
     outputs:
       tested: ${{ steps.check.outputs.tested }}
+      evidence: ${{ steps.check.outputs.evidence }}
     steps:
       - id: check
         env:
@@ -43,12 +47,13 @@ jobs:
           # details_url of an Actions check run is .../actions/runs/<run_id>/job/<job_id>;
           # this run's own ci-ok never counts.
           if ids=$(gh api --paginate "repos/$REPO/commits/$SHA/check-runs?check_name=ci-ok&per_page=100" \
-            --jq ".check_runs[] | select(.conclusion == \"success\") | select((.details_url // \"\") | test(\"/actions/runs/$RUN_ID/\") | not) | .id"); then
-            if [ -n "$ids" ]; then tested=true; fi
+            --jq ".check_runs[] | select(.conclusion == \"success\") | select((.details_url // \"\") | test(\"/actions/runs/$RUN_ID/\") | not) | .details_url"); then
+            if [ -n "$ids" ]; then tested=true; evidence=$(head -n1 <<<"$ids"); fi
           else
             echo "::warning::check-run query failed; running the full gate"
           fi
           echo "tested=$tested" | tee -a "$GITHUB_OUTPUT"
+          echo "evidence=${evidence:-}" >> "$GITHUB_OUTPUT"
 
   validate:
     needs: dedupe
@@ -116,6 +121,7 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
           DEDUPE_RESULT: ${{ needs.dedupe.result }}
           TESTED: ${{ needs.dedupe.outputs.tested }}
+          EVIDENCE: ${{ needs.dedupe.outputs.evidence }}
         run: |
           printf '%s\n' "$NEEDS"
           case "$DEDUPE_RESULT" in
@@ -123,7 +129,7 @@ jobs:
             *) echo "::error::dedupe concluded $DEDUPE_RESULT"; exit 1 ;;
           esac
           if [ "$TESTED" = true ]; then
-            echo "该 SHA 已由 candidate 运行验证"
+            echo "该 SHA 已由 ${EVIDENCE} 验证"
             exit 0
           fi
           results=$(jq -r 'to_entries[] | select(.key != "dedupe") | "\(.key)=\(.value.result)"' <<<"$NEEDS")
