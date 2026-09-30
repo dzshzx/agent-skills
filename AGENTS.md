@@ -5,5 +5,5 @@
 - 提交前运行 `scripts/format.sh`；CI 以 `scripts/format.sh --check` 把关（Python 用 ruff format、JS/TS 与 Markdown/YAML/JSON 用 prettier、Shell 用 shfmt，版本固定在脚本内）。
 - 文档和路由修改运行 `scripts/verify.sh --no-live`；脚本或命令契约变化再运行对应离线检查。每个 skill 的 `evals/live-check.sh` 会真实调用、计费，按任务需要及已有授权执行；保留其入口，结果只证明脚本中的断言。
 - 提交标题按全局规则（本机 `git-task-isolation.md`）写，本仓另允许 `skill` 类型；配置在 `commitlint.config.mjs`，由 `scripts/check-commit-subjects.sh` 检查。
-- 改动经全局 `land` 命令推成 `candidate/**`，该 SHA 的 `ci-ok` 通过后由 land 快进 master，未测提交不直推 master；发布再在该 master 提交上推匹配的 annotated `vX.Y.Z` tag；远端 tag 不移动或复用，修复使用下个 patch。版本号按 README「Releases」档位标准：默认 patch；minor（用户可感知的新能力）与 major（含 0.x→1.0）须先经用户确认。
+- 日常改动完成本地验证后用 `land --no-recut` 同步 master；PR 与发布标签保留短 CI，同 SHA 的可信完整检查可复用，Dependabot PR 经验证后手动合入；发布在该 master 提交上推匹配的 annotated `vX.Y.Z` tag；远端 tag 不移动或复用，修复使用下个 patch。版本号按 README「Releases」档位标准：默认 patch；minor（用户可感知的新能力）与 major（含 0.x→1.0）须先经用户确认。
 - 跟踪任务时见 `docs/agents/issue-tracker.md`；设计与验证入口见 README。

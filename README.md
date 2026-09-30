@@ -36,12 +36,12 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
 - **Project instruction surfaces are independent per agent.** Each
   `[[agents]]` entry declares its own `project_instruction_file`; a surface
   may not import, defer to, or treat another owner’s surface as authority.
-- Changes reach `master` only as green candidates: push the clean, rebased
-  commit with the global `land` command (a `candidate/**` branch), CI runs on
-  it, and `land` fast-forwards `master` to that exact sha. The `master`
-  ruleset requires the `ci-ok` check on every pushed sha, so `skills add`
-  never installs an unverified `master`. Release candidates are tagged from
-  `master` afterwards: create the annotated `vX.Y.Z` tag on that exact commit.
+- Daily changes are validated locally, then synchronized with `land --no-recut`.
+  Pull requests and release tags keep the short CI gate. Release validation may
+  reuse a fresh complete check of the exact SHA from the trusted PR/tag workflow;
+  unknown, failed or stale evidence runs the gate again. Dependabot PRs are
+  validated before manual merging. Create the authorized annotated `vX.Y.Z`
+  release tag on the validated master commit.
   Published tags are immutable and never reused; a failed release is fixed in
   the next patch version. Install a specific tag with the skills CLI when
   reproducibility matters.
@@ -128,13 +128,13 @@ planner for other public repositories: they fetch both files from this
 repository at a full 40-character commit SHA and run them with
 `uv run --script --locked`, instead of keeping a copy.
 
-Then push the candidate and wait for CI on its exact SHA:
+After local validation, synchronize the exact commit:
 
 ```bash
-land
+land --no-recut
 ```
 
-After promotion, tag the exact green master SHA and push the annotated tag:
+For an authorized release, tag that exact master SHA and push the annotated tag:
 
 ```bash
 git tag -a vX.Y.Z -m "Release vX.Y.Z"

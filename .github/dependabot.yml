@@ -1,5 +1,5 @@
 # Dependency update policy: fleet-state ADR 0048.
-# patch/minor grouped per ecosystem weekly (auto-merged after ci-ok); major as separate PRs.
+# Weekly grouped patch/minor PRs; validate locally before merging. Major updates stay separate.
 version: 2
 updates:
   - package-ecosystem: 'uv'

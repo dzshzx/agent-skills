@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [master, 'candidate/**']
   pull_request:
     branches: [master]
   workflow_call:
@@ -11,27 +9,21 @@ permissions:
   contents: read
 
 concurrency:
-  # Only a PR run superseded by a newer commit on the same PR is cancelled;
-  # candidate, master and dispatch runs always finish.
+  # Superseded PR runs may cancel; release-tag validation finishes.
   group: ci-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # land tests each SHA on candidate/** and then fast-forwards master to it, so
-  # the master push would rerun identical code. Only on default-branch pushes,
-  # skip the work when this SHA already has a successful ci-ok from another run;
-  # every other event skips this job and runs in full. Dependabot rebase merges
-  # produce new SHAs with no prior ci-ok and still run in full. A failed query
-  # yields tested=false: an extra run beats a missed one.
-  # A release tag push reaches this workflow only through release.yml's
-  # workflow_call and takes the same skip: the tagged SHA is on master, so it
-  # normally carries a ci-ok from its candidate or master run.
+  # A release tag may reuse a fresh complete PR/tag check of this exact SHA.
+  # The checkout below tests the PR head itself so the evidence identity agrees.
+  # Failed, cancelled, stale or unrecognized evidence reruns the short gate.
   dedupe:
-    if: github.event_name == 'push' && (github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || startsWith(github.ref, 'refs/tags/'))
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       checks: read
+      actions: read
     outputs:
       tested: ${{ steps.check.outputs.tested }}
       evidence: ${{ steps.check.outputs.evidence }}
@@ -44,14 +36,43 @@ jobs:
           RUN_ID: ${{ github.run_id }}
         run: |
           tested=false
-          # details_url of an Actions check run is .../actions/runs/<run_id>/job/<job_id>;
-          # this run's own ci-ok never counts.
-          if ids=$(gh api --paginate "repos/$REPO/commits/$SHA/check-runs?check_name=ci-ok&per_page=100" \
-            --jq ".check_runs[] | select(.conclusion == \"success\") | select((.details_url // \"\") | test(\"/actions/runs/$RUN_ID/\") | not) | .details_url"); then
-            if [ -n "$ids" ]; then tested=true; evidence=$(head -n1 <<<"$ids"); fi
+          query_failed=false
+          if pages=$(gh api --paginate --slurp "repos/$REPO/commits/$SHA/check-runs?filter=all&per_page=100") &&
+            jq -e --arg current "$RUN_ID" '[.[].check_runs[]
+              | select(.app.id == 15368 and (.name == "ci-ok" or (.name | endswith(" / ci-ok"))))
+              | select((.details_url // "" | contains("/actions/runs/" + $current + "/")) | not)] as $runs
+              | ($runs | length) > 0 and all($runs[]; .status == "completed" and .conclusion == "success")' <<<"$pages" >/dev/null; then
+            if ids=$(jq -r --arg current "$RUN_ID" '[.[].check_runs[]
+                | select(.app.id == 15368 and (.name == "ci-ok" or (.name | endswith(" / ci-ok"))))
+                | .details_url | capture("/actions/runs/(?<id>[0-9]+)/").id
+                | select(. != $current)] | unique[]' <<<"$pages"); then
+              for id in $ids; do
+                if ! run=$(gh api "repos/$REPO/actions/runs/$id"); then
+                  query_failed=true
+                  continue
+                fi
+                if jq -e --arg sha "$SHA" '.head_sha == $sha
+                    and (.path == ".github/workflows/ci.yml" or .path == ".github/workflows/release.yml")
+                    and (.event == "pull_request" or .event == "push")
+                    and .status == "completed" and .conclusion == "success"
+                    and (.run_started_at | fromdateiso8601) > (now - 72 * 3600)' <<<"$run" >/dev/null; then
+                  attempt=$(jq -r '.run_attempt' <<<"$run")
+                  if ! jobs=$(gh api --paginate --slurp "repos/$REPO/actions/runs/$id/attempts/$attempt/jobs?per_page=100"); then
+                    query_failed=true
+                    continue
+                  fi
+                  if jq -e 'any(.[].jobs[]; (.name == "validate" or (.name | endswith(" / validate")))
+                      and .status == "completed" and .conclusion == "success")' <<<"$jobs" >/dev/null; then
+                    tested=true
+                    evidence=$(jq -r '.html_url' <<<"$run")
+                  fi
+                fi
+              done
+            fi
           else
             echo "::warning::check-run query failed; running the full gate"
           fi
+          [ "$query_failed" = false ] || tested=false
           echo "tested=$tested" | tee -a "$GITHUB_OUTPUT"
           echo "evidence=${evidence:-}" >> "$GITHUB_OUTPUT"
 
@@ -65,6 +86,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # commit-subject gate walks the pushed range
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up uv (Python from .python-version)
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
@@ -104,11 +126,8 @@ jobs:
           if [ "$EVENT" = pull_request ]; then RANGE="origin/$BASE..HEAD"; else RANGE="$BEFORE..$GITHUB_SHA"; fi
           bash scripts/check-commit-subjects.sh "$RANGE"
 
-  # The master ruleset requires this one check on every pushed SHA. It runs even
-  # when a needed job fails or is skipped. dedupe must succeed or be skipped;
-  # when it found this SHA already verified, the check passes, otherwise every
-  # other needed job must have succeeded, so adding or renaming jobs never
-  # touches the ruleset.
+  # PR/tag result and release-reuse evidence, not a master admission rule.
+  # Failure and cancellation must remain visible even when a dependency skips.
   ci-ok:
     if: always()
     needs: [dedupe, validate]
