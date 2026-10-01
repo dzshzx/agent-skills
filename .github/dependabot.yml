@@ -3,6 +3,7 @@
 version: 2
 updates:
   - package-ecosystem: 'uv'
+    open-pull-requests-limit: 0 # Updates are proposed by local Renovate; alerts stay enabled.
     directories:
       - '/'
     schedule:
@@ -13,6 +14,7 @@ updates:
       uv-minor-patch:
         update-types: ['minor', 'patch']
   - package-ecosystem: 'github-actions'
+    open-pull-requests-limit: 0 # Updates are proposed by local Renovate; alerts stay enabled.
     directories:
       - '/'
       - '/.github/actions/*'
