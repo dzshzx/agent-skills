@@ -39,8 +39,8 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
 - Daily changes are validated locally, then synchronized with `land --no-recut`.
   Pull requests and release tags keep the short CI gate. Release validation may
   reuse a fresh complete check of the exact SHA from the trusted PR/tag workflow;
-  unknown, failed or stale evidence runs the gate again. Dependabot PRs are
-  validated before manual merging. Create the authorized annotated `vX.Y.Z`
+  unknown, failed or stale evidence runs the gate again. Renovate dependency PRs are
+  validated and integrated according to the local eligibility policy. Create the authorized annotated `vX.Y.Z`
   release tag on the validated master commit.
   Published tags are immutable and never reused; a failed release is fixed in
   the next patch version. Install a specific tag with the skills CLI when
