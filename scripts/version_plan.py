@@ -4,7 +4,7 @@
 # dependencies = ["semver==3.1.0"]
 #
 # [tool.uv]
-# exclude-newer = "3 days"
+# exclude-newer = "1 day"
 # ///
 """Print and verify a release version plan (baseline -> target) from remote tags."""
 

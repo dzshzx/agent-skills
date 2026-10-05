@@ -4,7 +4,7 @@
 # dependencies = ["pydantic==2.13.5"]
 #
 # [tool.uv]
-# exclude-newer = "3 days"
+# exclude-newer = "1 day"
 # ///
 """Validate a sync-agents-instructions machine config against the schema in SKILL.md.
 

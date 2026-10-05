@@ -4,7 +4,7 @@
 # dependencies = []
 #
 # [tool.uv]
-# exclude-newer = "3 days"
+# exclude-newer = "1 day"
 # ///
 """On-demand accounting of observed Codex rollout responses; no model calls."""
 
