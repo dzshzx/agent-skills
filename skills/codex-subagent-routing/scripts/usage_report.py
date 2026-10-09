@@ -38,6 +38,19 @@ def own_rows(rows):
     return meta, result
 
 
+def thread_spawn(meta):
+    source = meta.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    # Subagent sources are a tagged union: review/compact may be strings,
+    # whereas thread_spawn carries an object with origin and role metadata.
+    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
+    return spawn if isinstance(spawn, dict) else {}
+
+
+def parent_thread_id(meta):
+    return meta.get("parent_thread_id") or thread_spawn(meta).get("parent_thread_id")
+
+
 def load_threads(directories, thread=None):
     threads = {}
     indexed = []
@@ -58,9 +71,7 @@ def load_threads(directories, thread=None):
             indexed.append((path, meta))
     wanted = {thread} if thread else {m.get("id") for _, m in indexed}
     while True:
-        children = {
-            m.get("id") for _, m in indexed if m.get("parent_thread_id") in wanted
-        }
+        children = {m.get("id") for _, m in indexed if parent_thread_id(m) in wanted}
         if children <= wanted:
             break
         wanted.update(children)
@@ -131,17 +142,20 @@ def price(request, prices):
 
 def summarize(tid, node, since=None, until=None, prices=None):
     meta = node["meta"]
-    spawn = meta.get("source", {})
-    spawn = (
-        spawn.get("subagent", {}).get("thread_spawn", {})
-        if isinstance(spawn, dict)
-        else {}
-    )
+    spawn = thread_spawn(meta)
+    parent = parent_thread_id(meta)
+    source = meta.get("source")
+    is_subagent = bool(parent) or (isinstance(source, dict) and "subagent" in source)
     current = {"model": None, "effort": None, "service_tier": None}
     requests, seen, limits, moments = [], {}, [], []
     counts = {"turn_starts": 0, "continuation_calls": 0, "compactions": 0}
     status = "unknown"
     missing = set()
+    if is_subagent:
+        if not spawn.get("agent_role"):
+            missing.add("agent_role")
+        if not parent:
+            missing.add("parent_thread_id")
     # Current runtimes persist authoritative per-response records alongside
     # UI token_count snapshots. Match cumulative totals to avoid counting both.
     typed_snapshots, typed_turns = set(), set()
@@ -279,9 +293,8 @@ def summarize(tid, node, since=None, until=None, prices=None):
     known = sum(r["cost"] for r in requests if r["cost"] is not None)
     return {
         "thread_id": tid,
-        "parent_thread_id": meta.get("parent_thread_id")
-        or spawn.get("parent_thread_id"),
-        "role": spawn.get("agent_role") or ("unknown" if spawn else "main"),
+        "parent_thread_id": parent,
+        "role": spawn.get("agent_role") or ("unknown" if is_subagent else "main"),
         "status": status,
         "files": node["files"],
         "observed_responses": len(requests),
@@ -317,19 +330,7 @@ def report(threads, thread=None, since=None, until=None, prices=None):
         wanted.extend(
             t
             for t, n in threads.items()
-            if t not in wanted
-            and (
-                n["meta"].get("parent_thread_id")
-                or (
-                    n["meta"].get("source", {})
-                    if isinstance(n["meta"].get("source"), dict)
-                    else {}
-                )
-                .get("subagent", {})
-                .get("thread_spawn", {})
-                .get("parent_thread_id")
-            )
-            == tid
+            if t not in wanted and parent_thread_id(n["meta"]) == tid
         )
     result = [summarize(t, threads[t], since, until, prices) for t in wanted]
     if thread is None:
