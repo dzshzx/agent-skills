@@ -41,7 +41,7 @@ kimi -p "$(cat "$BRIEF")" --output-format stream-json
   files alike.
   - `--agent explore` selects the vendor's built-in read-only agent —
     `Read, Grep, Glob, Bash, ReadMediaFile, FetchURL, WebSearch` when asked to enumerate itself — with nothing to write
-    beforehand: the shell returns, `Write` and `Edit` stay gone, and shell-borne writes ride on
+    beforehand: the set includes `Bash` but not `Write` or `Edit`, so shell-borne writes ride on
     the brief. It reads images (`ReadMediaFile` delivers pixels, not bytes) and reaches the
     network.
   - `--agent-file <file.md>` selects your own definition, whose frontmatter `tools:` list is a
