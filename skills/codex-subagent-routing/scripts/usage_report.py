@@ -2,9 +2,6 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = []
-#
-# [tool.uv]
-# exclude-newer = "1 day"
 # ///
 """On-demand accounting of observed Codex rollout responses; no model calls."""
 
