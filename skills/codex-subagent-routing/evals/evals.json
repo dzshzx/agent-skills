@@ -48,11 +48,12 @@
     {
       "eval_name": "zero-delegation-medium",
       "prompt": "Codex 主会话 medium 档位，AGENTS 和 root_agent_usage_hint_text 都写了多文件调查交给 explorer，可真实任务八次都没派子代理。改了两轮措辞仍然零委派，接下来怎么查？",
-      "expected_output": "先用 codex debug prompt-input 渲染输入，看 multi_agent_mode 块：非 Ultra 默认只在明确请求时委派并作废前面的主动委派指令；用 multi_agent_mode_hint_text 覆盖后再用小型真实只读任务每组至少三次验证委派，成本在委派发生后按根与子代理拆分比较。",
+      "expected_output": "先用 codex debug prompt-input 渲染输入，按顺序读契约与 multi_agent_mode 的实际文本；后置模式可能取消先前主动委派许可，同时保留用户、适用 AGENTS.md 或 skill 明确请求的例外，应核对本任务是否满足例外。只有实际模式不符合预期政策时才考虑 multi_agent_mode_hint_text，并重新渲染候选。小型真实只读任务每组至少三次，先看委派次数与角色；成本在委派发生后按根与子代理拆分比较。",
       "files": [],
       "expectations": [
         "第一步是 codex debug prompt-input 渲染输入，而不是继续改措辞或跑整套任务",
-        "指出非 Ultra 默认 multi_agent_mode 作废前面的主动委派指令，开关是 multi_agent_mode_hint_text",
+        "按渲染顺序解释 multi_agent_mode 取消的先前许可与保留的明确请求例外，核对适用 AGENTS.md 或 skill 是否满足例外，不由 effort 一概断言 AGENTS 无效",
+        "仅在实际模式不符合预期政策时考虑 multi_agent_mode_hint_text，并重新渲染候选",
         "行为验证用小型真实只读任务、每组至少三次，先看委派次数与角色，成本比较放在委派发生之后"
       ],
       "split": "held-out",

@@ -10,11 +10,13 @@ description: Diagnose or configure Codex subagent routing — missing or unwante
 1. Render the input first: `codex debug prompt-input <probe>` shows what the
    model receives in about two seconds without a model call; `-c key=value`
    renders a candidate without editing files. Read the delegation contract and
-   the `<multi_agent_mode>` block in their rendered order. Below Ultra effort
-   the default mode block is explicit-request-only and voids every earlier
-   instruction enabling proactive delegation, so contract, AGENTS and role
-   wording cannot produce it; `features.multi_agent_v2.multi_agent_mode_hint_text`
-   replaces that block. Explain delegation behaviour from the rendered input
+   the `<multi_agent_mode>` block in their rendered order. A later mode block
+   can cancel earlier proactive permission while retaining explicit-request
+   exceptions for the user, applicable AGENTS.md or skills. Check its actual
+   wording and whether the task meets an exception; effort alone does not decide
+   authorization. If the effective mode differs from the intended policy,
+   `features.multi_agent_v2.multi_agent_mode_hint_text` can replace that block;
+   render the candidate again. Explain delegation behaviour from this evidence
    before rewording instructions or running tasks.
 2. Resources come from the managed configuration source. Role files fix the
    model and can take precedence over explicit spawn arguments; effort is passed

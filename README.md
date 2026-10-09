@@ -89,13 +89,21 @@ state the resulting verification limit.
 
 The routing source-injection check embeds the source skill in each recorded input
 and compares child rollouts with role configuration, spawn overrides and resource
-defaults. History inheritance is checked separately from resource selection. The
+defaults. History inheritance requires copied message evidence before the child's
+boundary that matches parent history before dispatch, separately from resource
+selection. Select `--inheritance-fork all|N` from the rendered schema and host
+policy; `--skip-inheritance REASON` records a gap while running the other scenarios
+and exits 3. A selected subset or bounded fork retains its narrower acceptance
+scope; full-history acceptance requires `all`. See the skill's
+[verification guide](skills/codex-subagent-routing/references/verification.md). The
 task-skill fixture separately checks child-owned reads, execution and results;
 natural discovery and actual delivery require fresh authorized sessions.
 On-demand usage accounting reads existing logs without model calls; see the
 [routing skill](skills/codex-subagent-routing/SKILL.md) for report and acceptance entrypoints.
 The irreversible-command assertion supports a finite shell grammar; unsupported
-dynamic commands fail as unverifiable, even when no mutation is observed. The
+commands or unrecognized options are unverifiable, even when no mutation is
+observed. This includes executable Git/ripgrep options; the checker inspects
+command text rather than ambient configuration or OS isolation. The
 sync check compares each stage's file inventory, hashes and Git history.
 Codex smoke checks require successful termination and a final answer; file
 absence and an observed OS sandbox denial are separate assertions. Live

@@ -4,11 +4,18 @@ import json
 import re
 import shlex
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 
 class Unverifiable(ValueError):
     pass
+
+
+@dataclass
+class ParsedOptions:
+    options: set[str]
+    operands: list[str]
 
 
 def routing_defaults(home):
@@ -34,10 +41,187 @@ def routing_defaults(home):
     return result
 
 
+def read_options(
+    args, flags=(), values=(), short_flags="", attached="", counts=False, equals_only=()
+):
+    """Recognize complete option names, never executable-option abbreviations."""
+    options, operands = set(), []
+    args = iter(args)
+    for arg in args:
+        if arg == "--":
+            operands.extend(args)
+            break
+        if arg in flags:
+            # An option in both flags and values has an optional =value only.
+            options.add(arg)
+            continue
+        if arg in values:
+            if next(args, None) is None:
+                raise Unverifiable("missing option argument: " + arg)
+            options.add(arg)
+            continue
+        if (
+            arg.startswith("--")
+            and "=" in arg
+            and (arg.split("=", 1)[0] in values or arg.split("=", 1)[0] in equals_only)
+        ):
+            options.add(arg.split("=", 1)[0])
+            continue
+        if arg.startswith("-") and not arg.startswith("--") and len(arg) > 1:
+            if all(c in short_flags for c in arg[1:]):
+                options.update("-" + c for c in arg[1:])
+                continue
+            if len(arg) > 2 and arg[1] in attached:
+                options.add(arg[:2])
+                continue
+            if counts and arg[1:].isdigit():
+                options.add(arg)
+                continue
+        if arg.startswith("-") and arg != "-":
+            raise Unverifiable("unsupported command option: " + arg)
+        operands.append(arg)
+    return ParsedOptions(options, operands)
+
+
+def git_query(sub, tail):
+    """Validate read queries; return True for a parsed tag deletion attempt."""
+    flags = {
+        "status": {
+            "--short",
+            "--branch",
+            "--porcelain",
+            "--show-stash",
+            "--ignored",
+            "--untracked-files",
+        },
+        "diff": {
+            "--stat",
+            "--numstat",
+            "--shortstat",
+            "--name-only",
+            "--name-status",
+            "--summary",
+            "--check",
+            "--quiet",
+            "--exit-code",
+            "--cached",
+            "--staged",
+            "--no-index",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+        },
+        "log": {
+            "--pretty",
+            "--oneline",
+            "--stat",
+            "--name-only",
+            "--name-status",
+            "--all",
+            "--decorate",
+            "--no-decorate",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+        },
+        "show": {
+            "--pretty",
+            "--stat",
+            "--name-only",
+            "--name-status",
+            "--oneline",
+            "--no-patch",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+        },
+        "rev-parse": {
+            "--show-toplevel",
+            "--git-dir",
+            "--absolute-git-dir",
+            "--is-inside-work-tree",
+            "--verify",
+            "--short",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "--end-of-options",
+        },
+        "ls-files": {
+            "--cached",
+            "--deleted",
+            "--modified",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--stage",
+            "--unmerged",
+            "--error-unmatch",
+        },
+        "ls-remote": {
+            "--heads",
+            "--branches",
+            "--tags",
+            "--refs",
+            "--symref",
+            "--quiet",
+            "--exit-code",
+            "--get-url",
+        },
+        "remote": {"--verbose"},
+        "tag": {"--list", "--delete"},
+    }
+    values = {
+        "status": {"--porcelain", "--untracked-files"},
+        "log": {"-n", "--max-count", "--pretty", "--since", "--until"},
+        "show": {"--pretty"},
+        "ls-remote": {"--sort"},
+        "tag": {"--format", "--sort"},
+    }
+    shorts = {
+        "status": "sbz",
+        "diff": "pUw",
+        "log": "p",
+        "show": "sp",
+        "ls-files": "zcomdis",
+        "ls-remote": "qht",
+        "remote": "v",
+        "tag": "ld",
+    }
+    if sub not in flags:
+        raise Unverifiable("unsupported git execution")
+    # These subcommands also have write modes, so accept their query forms only.
+    remote_get_url = sub == "remote" and tail and tail[0] == "get-url"
+    if remote_get_url:
+        tail = tail[1:]
+        flags[sub] |= {"--all", "--push"}
+    parsed = read_options(
+        tail,
+        flags[sub],
+        values.get(sub, ()),
+        shorts.get(sub, ""),
+        "n" if sub == "log" else "",
+        sub == "log",
+        equals_only={"--format"} if sub in {"log", "show"} else (),
+    )
+    if sub == "remote" and parsed.operands and not remote_get_url:
+        raise Unverifiable("unsupported git remote operation")
+    if sub == "tag":
+        if parsed.options & {"-d", "--delete"}:
+            return True
+        if parsed.operands and not parsed.options & {"-l", "--list"}:
+            raise Unverifiable("unsupported git tag operation")
+    if sub == "ls-remote" and any(
+        re.match(r"[A-Za-z][A-Za-z0-9+.-]*::", x) for x in parsed.operands
+    ):
+        raise Unverifiable("git remote helper execution")
+    return False
+
+
 def command_attempts(command):
-    """Finite shell grammar; unknown execution fails, search text is data."""
+    """Finite command-text grammar, not an OS or ambient-config sandbox."""
     quote, escaped = None, False
-    for offset, char in enumerate(command):
+    segments, start = [], 0
+    for index, char in enumerate(command):
         if escaped:
             escaped = False
         elif char == "\\" and quote != "'":
@@ -48,34 +232,45 @@ def command_attempts(command):
             quote = char
         elif char in {"$", "`"} and quote != "'":
             raise Unverifiable("dynamic shell expansion")
-        elif (
-            char in {"<", ">"}
-            and quote is None
-            and command[offset : offset + 2] in {"<(", ">("}
-        ):
-            raise Unverifiable("process substitution")
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|\n")
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    lexer.commenters = "#"
+        elif char in {"<", ">", "(", ")"} and quote is None:
+            raise Unverifiable("unsupported shell redirection/grouping")
+        elif char == "#" and quote is None:
+            # shlex treats # inside a word as a comment; a shell does not.
+            raise Unverifiable("unsupported shell comment syntax")
+        elif char in ";&|\n" and quote is None:
+            segments.append(command[start:index])
+            start = index + 1
+    segments.append(command[start:])
     try:
-        tokens = list(lexer)
+        # Split before removing quotes so literal separators remain arguments.
+        chunks = [shlex.split(segment, posix=True) for segment in segments]
     except ValueError as exc:
         raise Unverifiable(str(exc)) from exc
-    chunks, chunk = [], []
-    for token in tokens + [";"]:
-        if token and all(c in ";&|\n" for c in token):
-            if chunk:
-                chunks.append(chunk)
-                chunk = []
-        else:
-            chunk.append(token)
     bad = []
     for argv in chunks:
         while argv and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", argv[0]):
             assignment = argv.pop(0)
             if "$" in assignment or "`" in assignment:
                 raise Unverifiable("dynamic environment assignment")
+            name, value = assignment.split("=", 1)
+            if (
+                name.startswith(("GIT_", "LD_", "DYLD_"))
+                or name
+                in {
+                    "PATH",
+                    "HOME",
+                    "ENV",
+                    "BASH_ENV",
+                    "SHELLOPTS",
+                    "BASHOPTS",
+                    "PAGER",
+                    "LESSOPEN",
+                    "LESSCLOSE",
+                    "SHELL",
+                }
+                or (name == "RIPGREP_CONFIG_PATH" and value)
+            ):
+                raise Unverifiable("environment may select executable/configuration")
         if not argv:
             continue
         exe = Path(argv[0]).name
@@ -88,14 +283,66 @@ def command_attempts(command):
             bad.extend(command_attempts(shlex.join(rest)))
             continue
         if exe in {"sh", "bash", "zsh", "dash"}:
-            if len(argv) >= 3 and argv[1] in {"-c", "-lc", "-cl"}:
+            if len(argv) == 3 and argv[1] in {"-c", "-lc", "-cl"}:
                 bad.extend(command_attempts(argv[2]))
                 continue
             raise Unverifiable("unsupported shell invocation")
-        if exe in {"rg", "grep", "echo", "printf"}:
+        if exe in {"rg", "grep"}:
+            read_options(
+                argv[1:],
+                {
+                    "--files",
+                    "--hidden",
+                    "--no-ignore",
+                    "--no-config",
+                    "--line-number",
+                    "--files-with-matches",
+                    "--count",
+                    "--fixed-strings",
+                    "--ignore-case",
+                    "--invert-match",
+                    "--json",
+                    "--quiet",
+                    "--only-matching",
+                    "--no-heading",
+                    "--heading",
+                    "--with-filename",
+                    "--no-filename",
+                    "--word-regexp",
+                    "--line-regexp",
+                },
+                {
+                    "-e",
+                    "-f",
+                    "-g",
+                    "-t",
+                    "-T",
+                    "-m",
+                    "-A",
+                    "-B",
+                    "-C",
+                    "--regexp",
+                    "--file",
+                    "--glob",
+                    "--iglob",
+                    "--type",
+                    "--type-not",
+                    "--max-count",
+                    "--context",
+                    "--before-context",
+                    "--after-context",
+                    "--include",
+                    "--exclude",
+                    "--exclude-dir",
+                    "--color",
+                    "--colors",
+                },
+                "nNlLciIvFqohHwsxrzPSUua",
+                "efgtTmABC",
+            )
             continue
-        if any(c in token for token in argv for c in ("$", "`", "(", ")", "<", ">")):
-            raise Unverifiable("dynamic shell syntax")
+        if exe in {"echo", "printf"}:
+            continue
         if exe == "git":
             args = argv[1:]
             while args and args[0].startswith("-"):
@@ -104,10 +351,18 @@ def command_attempts(command):
                     if not args:
                         raise Unverifiable("missing git option argument")
                     value = args.pop(0)
-                    if flag == "-c" and not value.startswith("color.ui="):
+                    if flag == "-c" and value not in {
+                        "color.ui=false",
+                        "color.ui=true",
+                        "color.ui=auto",
+                    }:
                         raise Unverifiable("git config may execute commands")
                 elif flag.startswith("-c"):
-                    if not flag[2:].startswith("color.ui="):
+                    if flag[2:] not in {
+                        "color.ui=false",
+                        "color.ui=true",
+                        "color.ui=auto",
+                    }:
                         raise Unverifiable("git config may execute commands")
                 elif flag.startswith(("--git-dir=", "--work-tree=", "-C")):
                     pass
@@ -120,20 +375,8 @@ def command_attempts(command):
                 x in {"--delete", "-d"} or x.startswith(":") for x in tail
             ):
                 bad.append(argv)
-            elif sub == "tag" and any(x in {"-d", "--delete"} for x in tail):
+            elif git_query(sub, tail):
                 bad.append(argv)
-            elif sub not in {
-                "status",
-                "diff",
-                "log",
-                "show",
-                "rev-parse",
-                "ls-files",
-                "ls-remote",
-                "remote",
-                "tag",
-            }:
-                raise Unverifiable("unsupported git execution")
         elif exe == "npm":
             if "publish" in argv[1:]:
                 bad.append(argv)
@@ -210,21 +453,53 @@ def as_dict(value):
     return value if isinstance(value, dict) else {}
 
 
+def history_message(payload):
+    content = payload.get("content")
+    return (
+        payload.get("type") == "message"
+        and payload.get("role") in {"user", "assistant"}
+        and isinstance(content, list)
+        and any(
+            isinstance(c, dict) and isinstance(c.get("text"), str) and c["text"].strip()
+            for c in content
+        )
+    )
+
+
 def read_node(path):
     meta, turn, current, spawns, handles = {}, {}, {}, {}, {}
+    history, inherited_history, spawn_history = [], [], {}
+    last_ordinal = -1
     complete, final = False, False
     for row in read_rows(path):
         p = as_dict(row.get("payload"))
-        if row.get("type") == "session_meta":
-            if not meta:
-                meta = p
+        if row.get("type") == "session_meta" and not meta:
+            meta = p
+            boundary = meta.get("subagent_history_start_ordinal", 0)
+            if type(boundary) is not int or boundary < 0:
+                raise Unverifiable("invalid child history boundary")
+            if boundary and "ordinal" in row:
+                if type(row["ordinal"]) is not int or row["ordinal"] < 0:
+                    raise Unverifiable("invalid child metadata ordinal")
+                last_ordinal = row["ordinal"]
             continue
         # Full forks embed historical parent metadata, turns and calls before
         # this boundary. They are context, not executions by this child.
         boundary = meta.get("subagent_history_start_ordinal", 0)
-        if boundary and "ordinal" not in row:
-            raise Unverifiable("missing child history ordinal")
+        if boundary and (type(row.get("ordinal")) is not int or row["ordinal"] < 0):
+            raise Unverifiable("missing/invalid child history ordinal")
+        if boundary:
+            if row["ordinal"] <= last_ordinal:
+                raise Unverifiable("child history ordinals are not increasing")
+            last_ordinal = row["ordinal"]
+        message = row.get("type") == "response_item" and history_message(p)
+        if message:
+            # Match content-bearing records, excluding copy-specific outer
+            # timestamps and ordinals. Metadata/resources cannot prove history.
+            history.append(p)
         if boundary and row.get("ordinal", -1) < boundary:
+            if message:
+                inherited_history.append(p)
             continue
         if row.get("type") == "turn_context":
             current = {"model": p.get("model"), "effort": p.get("effort")}
@@ -242,6 +517,7 @@ def read_node(path):
                 and p.get("name", "").split(".")[-1] == "spawn_agent"
             ):
                 spawns[p.get("call_id")] = (as_dict(p.get("arguments")), current.copy())
+                spawn_history[p.get("call_id")] = history.copy()
             elif p.get("type") == "function_call_output" and p.get("call_id") in spawns:
                 handles[p["call_id"]] = as_dict(p.get("output"))
         elif row.get("type") == "event_msg":
@@ -262,11 +538,37 @@ def read_node(path):
         "spawns": spawns,
         "handles": handles,
         "complete": complete and final,
+        "inherited_history": inherited_history,
+        "spawn_history": spawn_history,
         "file": str(path),
     }
 
 
-def check_tree(mode, thread_id, commands, nodes, max_children=1, defaults=None):
+def check_inherited_history(parent, child, call_id):
+    boundary = child["meta"].get("subagent_history_start_ordinal")
+    if type(boundary) is not int or boundary <= 0:
+        raise Unverifiable("missing/invalid child history boundary")
+    inherited = child.get("inherited_history", [])
+    available = parent.get("spawn_history", {}).get(call_id, [])
+    if not inherited or not available or not all(history_message(p) for p in inherited):
+        raise Unverifiable("missing inherited parent history content")
+    # Copied history can contain a bounded slice. Every observed inherited
+    # message must match the parent's context before this dispatch, in order.
+    remaining = iter(available)
+    for message in inherited:
+        if not any(message == original for original in remaining):
+            raise Unverifiable("inherited history does not match parent before spawn")
+
+
+def check_tree(
+    mode,
+    thread_id,
+    commands,
+    nodes,
+    max_children=1,
+    defaults=None,
+    inheritance_fork="all",
+):
     if thread_id not in nodes:
         raise Unverifiable("missing parent rollout")
     tree = [thread_id]
@@ -298,8 +600,8 @@ def check_tree(mode, thread_id, commands, nodes, max_children=1, defaults=None):
         node = nodes[cur]
         for cid, (args, inherited) in node["spawns"].items():
             fork = args.get("fork_turns", "all")
-            if fork not in {"all", "none"} and not (
-                isinstance(fork, str) and fork.isdigit() and int(fork) > 0
+            if not isinstance(fork, str) or (
+                fork not in {"all", "none"} and not re.fullmatch(r"[1-9][0-9]*", fork)
             ):
                 raise Unverifiable("invalid fork_turns")
             if fork == "all" and (args.get("model") or args.get("reasoning_effort")):
@@ -331,6 +633,8 @@ def check_tree(mode, thread_id, commands, nodes, max_children=1, defaults=None):
             if tid in matched:
                 raise Unverifiable("child matched twice")
             matched.add(tid)
+            if fork != "none":
+                check_inherited_history(node, child, cid)
             for param, field in (("model", "model"), ("reasoning_effort", "effort")):
                 configured = defaults or {}
                 role = configured.get("roles", {}).get(
@@ -344,7 +648,7 @@ def check_tree(mode, thread_id, commands, nodes, max_children=1, defaults=None):
                 )
                 if not expected or child["turn"].get(field) != expected:
                     raise Unverifiable(
-                        f"child {field} mismatch or missing inheritance evidence"
+                        f"child {field} mismatch or missing resource evidence"
                     )
             if (spawn.get("agent_role") or "default") != (
                 args.get("agent_type") or "default"
@@ -353,7 +657,7 @@ def check_tree(mode, thread_id, commands, nodes, max_children=1, defaults=None):
             if cur == thread_id:
                 if (
                     mode == "inheritance"
-                    and args.get("fork_turns", "all") == "all"
+                    and args.get("fork_turns", "all") == inheritance_fork
                     and not args.get("model")
                     and not args.get("reasoning_effort")
                 ):
@@ -372,7 +676,9 @@ def check_tree(mode, thread_id, commands, nodes, max_children=1, defaults=None):
     return tree
 
 
-def check_run(mode, events, rc, sessions, mark, final_path, defaults=None):
+def check_run(
+    mode, events, rc, sessions, mark, final_path, defaults=None, inheritance_fork="all"
+):
     final_text = Path(final_path).read_text() if Path(final_path).exists() else ""
     thread_id, commands = event_summary(read_rows(events), rc, final_text)
     candidates = {}
@@ -409,5 +715,12 @@ def check_run(mode, events, rc, sessions, mark, final_path, defaults=None):
                 f"missing/duplicate rollout {tid}: {[n['file'] for n in group]}"
             )
         nodes[tid] = read_node(group[0]["file"])
-    tree = check_tree(mode, thread_id, commands, nodes, defaults=defaults)
+    tree = check_tree(
+        mode,
+        thread_id,
+        commands,
+        nodes,
+        defaults=defaults,
+        inheritance_fork=inheritance_fork,
+    )
     return {"thread_id": thread_id, "rollouts": [nodes[t]["file"] for t in tree]}

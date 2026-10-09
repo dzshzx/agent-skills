@@ -127,6 +127,157 @@ class UsageTests(unittest.TestCase):
         result = report({"p": repeated}, since=timestamp("2026-09-12T00:00:03Z"))
         self.assertEqual(result["observed_responses"], 0)
 
+    def write_rollout(self, root, node):
+        rows = [row("session_meta", node["meta"], 0), *node["rows"]]
+        (root / f"rollout-{node['meta']['id']}.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows)
+        )
+
+    def cli_report(self, root, *args):
+        script = Path(__file__).resolve().parents[1] / "scripts/usage_report.py"
+        output = root / "report.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--sessions",
+                str(root),
+                "--json",
+                str(output),
+                *args,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(output.read_text())
+
+    def test_subagent_source_variants_have_unknown_missing_metadata(self):
+        for source in (
+            {"subagent": "review"},
+            {"subagent": "compact"},
+            {"subagent": {"other": "future-source"}},
+            {"subagent": {"thread_spawn": {}}},
+        ):
+            with self.subTest(source=source):
+                child = self.node(None)
+                child["meta"] = {"id": "c", "source": source}
+                result = report({"c": child})
+                detail = result["threads"][0]
+                self.assertEqual(detail["role"], "unknown")
+                self.assertIsNone(detail["parent_thread_id"])
+                self.assertIn("agent_role", detail["missing"])
+                self.assertIn("parent_thread_id", detail["missing"])
+                self.assertIsNone(result["cost"])
+                # Tree traversal must also tolerate unrelated subagent sources.
+                self.assertEqual(
+                    report({"p": self.node(), "c": child}, "p")["observed_responses"],
+                    1,
+                )
+
+    def test_cli_legacy_review_source_and_date_range(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            parent, review = self.node(), self.node(None)
+            review["meta"] = {"id": "review", "source": {"subagent": "review"}}
+            self.write_rollout(root, parent)
+            # Historical review logs can contain no own usage at all.
+            review["rows"] = []
+            self.write_rollout(root, review)
+            self.assertEqual(self.cli_report(root)["observed_responses"], 1)
+            # Synthetic own usage checks accounting and date filtering too.
+            review["rows"] = self.node(None)["rows"]
+            for event in review["rows"]:
+                event["timestamp"] = event["timestamp"].replace("09-12", "09-11")
+            self.write_rollout(root, review)
+            result = self.cli_report(root)
+            self.assertEqual(result["observed_responses"], 2)
+            self.assertEqual(result["totals"]["input_tokens"], 200)
+            self.assertEqual(result["threads"][1]["role"], "unknown")
+            result = self.cli_report(
+                root,
+                "--since",
+                "2026-09-12T00:00:00Z",
+                "--until",
+                "2026-09-13T00:00:00Z",
+            )
+            self.assertEqual([t["thread_id"] for t in result["threads"]], ["p"])
+            self.assertEqual(result["observed_responses"], 1)
+            self.assertEqual(
+                self.cli_report(root, "--thread", "p")["observed_responses"], 1
+            )
+
+    def test_cli_descendants_with_nested_and_top_level_parents(self):
+        prices = {
+            "as_of": "2026-09-12",
+            "currency": "USD",
+            "source": "synthetic test rates",
+            "rates": [
+                {
+                    "model": "model-a",
+                    "service_tier": "priority",
+                    "input_per_million": 10,
+                    "cached_input_per_million": 2,
+                    "output_per_million": 20,
+                }
+            ],
+        }
+        for child_nested, grandchild_nested in (
+            (True, True),
+            (True, False),
+            (False, True),
+            (False, False),
+        ):
+            with self.subTest(
+                child_nested=child_nested, grandchild_nested=grandchild_nested
+            ):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    nodes = {tid: self.node() for tid in ("p", "c", "a", "unrelated")}
+                    for tid, parent, nested in (
+                        ("c", "p", child_nested),
+                        ("a", "c", grandchild_nested),
+                    ):
+                        nodes[tid]["meta"] = {"id": tid}
+                        if nested:
+                            nodes[tid]["meta"]["source"] = {
+                                "subagent": {
+                                    "thread_spawn": {
+                                        "parent_thread_id": parent,
+                                        "agent_role": "worker",
+                                    }
+                                }
+                            }
+                        else:
+                            nodes[tid]["meta"]["parent_thread_id"] = parent
+                    nodes["unrelated"]["meta"] = {"id": "unrelated"}
+                    for node in nodes.values():
+                        self.write_rollout(root, node)
+                    price_file = root / "prices.json"
+                    price_file.write_text(json.dumps(prices))
+                    result = self.cli_report(
+                        root, "--thread", "p", "--prices", str(price_file)
+                    )
+                    self.assertEqual(result["observed_responses"], 3)
+                    self.assertAlmostEqual(result["cost"], 0.00276)
+                    loaded = load_threads([root], "p")
+                    self.assertEqual(set(loaded), {"p", "c", "a"})
+                    details = {t["thread_id"]: t for t in result["threads"]}
+                    self.assertEqual(set(details), {"p", "c", "a"})
+                    self.assertEqual(details["c"]["parent_thread_id"], "p")
+                    self.assertEqual(details["a"]["parent_thread_id"], "c")
+                    self.assertEqual(
+                        details["c"]["role"], "worker" if child_nested else "unknown"
+                    )
+                    self.assertEqual(
+                        result["totals"],
+                        {
+                            "input_tokens": 300,
+                            "cached_input_tokens": 180,
+                            "output_tokens": 60,
+                        },
+                    )
+
     def test_boundary_and_duplicate_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
