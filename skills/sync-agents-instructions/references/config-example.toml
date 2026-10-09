@@ -7,8 +7,6 @@
 project_globs = ["~/workspace/*"]
 # Optional: files this skill must NEVER write or restructure (project workflow owners).
 off_limits = ["**/docs/agents/**", "**/conventions/**"]
-# The natively-injected surface (entry files + all load="always" sources) is
-# sized by value, not by line count — see SKILL.md for the demote signals.
 
 # Exclusions are explicit and config-owned — never inferred from directory
 # names or repo contents.
