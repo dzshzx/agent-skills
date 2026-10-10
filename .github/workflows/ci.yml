@@ -88,6 +88,13 @@ jobs:
           fetch-depth: 0 # commit-subject gate walks the pushed range
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Install required system tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ripgrep shellcheck
+          rg --version
+          shellcheck --version
+
       - name: Set up uv (Python from .python-version)
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
