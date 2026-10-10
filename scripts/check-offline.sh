@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Deterministic regressions only: fixtures and fake CLIs; no model calls.
 set -euo pipefail
+if ! command -v rg >/dev/null 2>&1; then
+  echo "check-offline: required command rg not found in PATH (install ripgrep)" >&2
+  exit 127
+fi
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 # Locks must match their manifests (repo environment and PEP 723 scripts).
