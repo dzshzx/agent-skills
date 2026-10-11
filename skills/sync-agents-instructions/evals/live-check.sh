@@ -81,7 +81,7 @@ SCOPE="$SRC/evals/scope_evidence.py"
 "${PYRUN[@]}" "$SCOPE" snapshot "$B" "$T/converge-b-before.json" || exit 2
 sha256sum "$SRC/SKILL.md" >"$T/source.sha256"
 cp "$SRC/SKILL.md" "$T/source-skill.md"
-ALLOW='Bash(python3:*),Bash(git:*),Bash(cat:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(head:*),Bash(wc:*),Bash(diff:*),Bash(find:*)'
+ALLOW='Bash(uv:*),Bash(python3:*),Bash(git:*),Bash(cat:*),Bash(ls:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(head:*),Bash(wc:*),Bash(diff:*),Bash(find:*)'
 COMMON="Read $SRC/SKILL.md and follow it exactly — that source file, not any installed copy of the skill.
 The machine config is $T/config/sync-config.toml; validate it first with
 \`uv run --script --locked $SRC/scripts/validate_config.py $T/config/sync-config.toml\` and use no other config.
