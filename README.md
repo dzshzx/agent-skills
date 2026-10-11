@@ -74,7 +74,7 @@ regressions with fixtures and fake CLIs), `bash scripts/format.sh --check`, plus
 `bash scripts/check-commit-subjects.sh` (commitlint checks every commit in the
 pushed range against `commitlint.config.mjs`: the global Conventional Commits rule
 plus the `skill` type; needs Node for `npx`); CI runs exactly those.
-Offline regressions require ripgrep (`rg`) on `PATH`; CI explicitly installs
+Offline regressions require ripgrep (`rg`) on `PATH`; CI installs
 ripgrep and shellcheck before running the gates.
 `--no-live` disables live calls regardless of argument order. `--all` and
 explicit skill names are mutually exclusive (usage error, exit 2).
