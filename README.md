@@ -91,11 +91,14 @@ state the resulting verification limit.
 
 The routing source-injection check embeds the source skill in each recorded input
 and compares child rollouts with role configuration, spawn overrides and resource
-defaults. History inheritance requires copied message evidence before the child's
-boundary that matches parent history before dispatch, separately from resource
-selection. Select `--inheritance-fork all|N` from the rendered schema and host
-policy; `--skip-inheritance REASON` records a gap while running the other scenarios
-and exits 3. A selected subset or bounded fork retains its narrower acceptance
+defaults. History inheritance requires copied messages before the child's
+boundary that match parent history before dispatch and cover the selected scope
+turn by turn, separately from resource selection. Turns the checker cannot
+delimit, and compacted, rolled-back or undone parent history, are
+unverifiable. Select `--inheritance-fork all|N` from the rendered schema and
+host policy;
+`--skip-inheritance REASON` records a gap while running the other scenarios and
+exits 3. A selected subset or bounded fork retains its narrower acceptance
 scope; full-history acceptance requires `all`. See the skill's
 [verification guide](skills/codex-subagent-routing/references/verification.md). The
 task-skill fixture separately checks child-owned reads, execution and results;

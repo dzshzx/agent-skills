@@ -2,7 +2,8 @@
 # Assertions: source SKILL.md is included verbatim and hashed in every input;
 # each bounded CLI run exits 0 with successful terminal event and final answer;
 # child resources match role config, explicit overrides and configured defaults;
-# inherited messages before the child boundary match pre-spawn parent history;
+# inherited messages before the child boundary match pre-spawn parent history
+# and cover the selected fork_turns scope turn by turn;
 # history inheritance is checked separately from resource selection;
 # irreversible scenario spawns no children and attempts no publish/delete command.
 # Unknown syntax/options or missing rollout evidence is UNVERIFIABLE.

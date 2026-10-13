@@ -45,7 +45,7 @@ class RoutingChecks(unittest.TestCase):
                     )
                 },
                 "handles": {"call": {"task_name": "/root/child", "nickname": "N"}},
-                "spawn_history": {"call": [history]},
+                "spawn_history": {"call": {"turns": [[history]], "gap": None}},
             },
             "child": {
                 "meta": {
@@ -81,6 +81,7 @@ class RoutingChecks(unittest.TestCase):
         }
         parent = [
             row("session_meta", {"id": "parent"}, 0),
+            row("event_msg", {"type": "task_started"}, 1),
             row("turn_context", {"model": "model-a", "effort": "high"}, 1),
             row("response_item", history, 2),
         ]
@@ -132,7 +133,7 @@ class RoutingChecks(unittest.TestCase):
             ),
             row("event_msg", {"type": "task_complete"}, 4),
         ]
-        parent[2]["timestamp"] = "2026-10-09T00:00:00Z"
+        parent[3]["timestamp"] = "2026-10-09T00:00:00Z"
         child[1]["timestamp"] = "2026-10-09T00:00:01Z"
         events = self.events()
         if command is not None:
@@ -364,11 +365,190 @@ class RoutingChecks(unittest.TestCase):
         with self.assertRaises(Unverifiable):
             check_tree("inheritance", "parent", [], nodes)
 
+    def scope_fixture(self, root, fork, inherited, parent_rows=()):
+        """Two parent turns: turn 1 completed, dispatch inside turn 2."""
+        texts = {
+            "u1": ("user", "turn one: read README", None),
+            "a1": ("assistant", "turn one done", "final_answer"),
+            "u2": ("user", "turn two: also check notes", None),
+            "c2": ("assistant", "checking notes", "commentary"),
+        }
+
+        def message(key):
+            role, text, phase = texts[key]
+            item = {"type": "message", "role": role, "content": [{"text": text}]}
+            return {**item, "phase": phase} if phase else item
+
+        def rows(items):
+            return [
+                {"type": kind, "payload": payload, "ordinal": n}
+                for n, (kind, payload) in enumerate(items)
+            ]
+
+        context = ("turn_context", {"model": "model-a", "effort": "high"})
+        parent = [
+            ("session_meta", {"id": "parent"}),
+            ("event_msg", {"type": "task_started"}),
+            context,
+            ("response_item", message("u1")),
+            ("response_item", message("a1")),
+            ("event_msg", {"type": "task_complete"}),
+            *parent_rows,
+            ("event_msg", {"type": "task_started"}),
+            context,
+            ("response_item", message("u2")),
+            ("response_item", message("c2")),
+            (
+                "response_item",
+                {
+                    "type": "function_call",
+                    "name": "spawn_agent",
+                    "call_id": "call",
+                    "arguments": json.dumps({"task_name": "child", "fork_turns": fork}),
+                },
+            ),
+            (
+                "response_item",
+                {
+                    "type": "function_call_output",
+                    "call_id": "call",
+                    "output": json.dumps({"agent_id": "child"}),
+                },
+            ),
+        ]
+        child = [
+            (
+                "session_meta",
+                {
+                    "id": "child",
+                    "parent_thread_id": "parent",
+                    "subagent_history_start_ordinal": 1 + len(inherited),
+                },
+            ),
+            *(("response_item", message(key)) for key in inherited),
+            context,
+            (
+                "response_item",
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "phase": "final",
+                    "content": [{"text": "child done"}],
+                },
+            ),
+            ("event_msg", {"type": "task_complete"}),
+        ]
+        sessions = root / "sessions"
+        sessions.mkdir()
+        for name, items in (("parent", parent), ("child", child)):
+            (sessions / f"rollout-{name}.jsonl").write_text(
+                "\n".join(json.dumps(r) for r in rows(items))
+            )
+        (root / "events.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in self.events())
+        )
+        (root / "final.txt").write_text("done")
+        return check_run(
+            "inheritance",
+            root / "events.jsonl",
+            0,
+            root / "sessions",
+            0,
+            root / "final.txt",
+            inheritance_fork=fork,
+        )
+
     def test_bounded_fork_checks_the_requested_scope(self):
+        # Numeric scope: the dispatching turn plus the N-1 turns before it.
+        cases = [
+            ("2", ["u1", "a1", "u2"], None),
+            ("2", ["u1", "a1", "u2", "c2"], None),
+            ("1", ["u2"], None),
+            ("2", ["u1"], "does not cover"),
+            ("2", ["u2"], "does not cover"),
+            ("2", ["u1", "u2"], "does not cover"),
+            ("1", ["u1"], "exceeds"),
+            ("1", ["u1", "a1", "u2"], "exceeds"),
+        ]
+        for fork, inherited, failure in cases:
+            with (
+                self.subTest(fork=fork, inherited=inherited),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                if failure is None:
+                    self.scope_fixture(Path(tmp), fork, inherited)
+                else:
+                    with self.assertRaisesRegex(Unverifiable, failure):
+                        self.scope_fixture(Path(tmp), fork, inherited)
+        # The argument binding is still checked independently of coverage.
         nodes = self.tree({"task_name": "child", "fork_turns": "2"})
         check_tree("inheritance", "parent", [], nodes, inheritance_fork="2")
         with self.assertRaises(Unverifiable):
             check_tree("inheritance", "parent", [], nodes)
+
+    def test_full_fork_must_cover_every_turn_before_dispatch(self):
+        # Assistant messages of the in-progress dispatching turn are optional.
+        for inherited in (["u1", "a1", "u2"], ["u1", "a1", "u2", "c2"]):
+            with (
+                self.subTest(inherited=inherited),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                self.scope_fixture(Path(tmp), "all", inherited)
+        cases = [
+            (["u1"], "does not cover"),
+            (["u1", "a1"], "does not cover"),
+            (["a1", "u2"], "does not cover"),
+            (["u2"], "does not cover"),
+            (["u2", "c2"], "does not cover"),
+            (["u2", "u1"], "does not match"),
+            ([], "missing inherited"),
+        ]
+        for inherited, failure in cases:
+            with (
+                self.subTest(inherited=inherited),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                with self.assertRaisesRegex(Unverifiable, failure):
+                    self.scope_fixture(Path(tmp), "all", inherited)
+
+    def test_unprovable_parent_history_is_unverifiable(self):
+        cases = [
+            ("compacted", [("compacted", {"message": "summary"})]),
+            ("compacted", [("event_msg", {"type": "context_compacted"})]),
+            ("compacted", [("event_msg", {"type": "thread_rolled_back"})]),
+            ("compacted", [("event_msg", {"type": "undo_completed"})]),
+        ]
+        for fork in ("all", "2"):
+            for failure, parent_rows in cases:
+                with (
+                    self.subTest(fork=fork, rows=parent_rows),
+                    tempfile.TemporaryDirectory() as tmp,
+                ):
+                    with self.assertRaisesRegex(Unverifiable, failure):
+                        self.scope_fixture(
+                            Path(tmp), fork, ["u1", "a1", "u2"], parent_rows
+                        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.scope_fixture(root, "all", ["u1", "a1", "u2"])
+            # Without any turn-start event the parent's turns cannot be split.
+            path = root / "sessions" / "rollout-parent.jsonl"
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+            rows = [
+                r
+                for r in rows
+                if r["type"] != "event_msg" or r["payload"]["type"] != "task_started"
+            ]
+            path.write_text("\n".join(json.dumps(r) for r in rows))
+            with self.assertRaisesRegex(Unverifiable, "outside turn boundaries"):
+                check_run(
+                    "inheritance",
+                    root / "events.jsonl",
+                    0,
+                    root / "sessions",
+                    0,
+                    root / "final.txt",
+                )
 
     def test_failed_incomplete_timeout(self):
         event_summary(self.events(), 0, "done")

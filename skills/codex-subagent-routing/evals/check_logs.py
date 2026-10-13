@@ -466,9 +466,16 @@ def history_message(payload):
     )
 
 
+TURN_STARTS = {"task_started", "turn_started"}
+HISTORY_REMOVALS = {"context_compacted", "thread_rolled_back", "undo_completed"}
+
+
 def read_node(path):
     meta, turn, current, spawns, handles = {}, {}, {}, {}, {}
-    history, inherited_history, spawn_history = [], [], {}
+    inherited_history, spawn_history = [], {}
+    # Parent context before each dispatch, split at turn-start events. A gap
+    # names the first reason the split cannot prove what history existed.
+    turns, history_gap = [], None
     last_ordinal = -1
     complete, final = False, False
     for row in read_rows(path):
@@ -493,10 +500,19 @@ def read_node(path):
                 raise Unverifiable("child history ordinals are not increasing")
             last_ordinal = row["ordinal"]
         message = row.get("type") == "response_item" and history_message(p)
-        if message:
+        if row.get("type") == "event_msg" and p.get("type") in TURN_STARTS:
+            turns.append([])
+        elif row.get("type") == "compacted" or (
+            row.get("type") == "event_msg" and p.get("type") in HISTORY_REMOVALS
+        ):
+            history_gap = history_gap or "parent history compacted or removed"
+        elif message:
             # Match content-bearing records, excluding copy-specific outer
             # timestamps and ordinals. Metadata/resources cannot prove history.
-            history.append(p)
+            if turns:
+                turns[-1].append(p)
+            else:
+                history_gap = history_gap or "parent history outside turn boundaries"
         if boundary and row.get("ordinal", -1) < boundary:
             if message:
                 inherited_history.append(p)
@@ -517,11 +533,14 @@ def read_node(path):
                 and p.get("name", "").split(".")[-1] == "spawn_agent"
             ):
                 spawns[p.get("call_id")] = (as_dict(p.get("arguments")), current.copy())
-                spawn_history[p.get("call_id")] = history.copy()
+                spawn_history[p.get("call_id")] = {
+                    "turns": [list(t) for t in turns],
+                    "gap": history_gap,
+                }
             elif p.get("type") == "function_call_output" and p.get("call_id") in spawns:
                 handles[p["call_id"]] = as_dict(p.get("output"))
         elif row.get("type") == "event_msg":
-            if p.get("type") in {"task_started", "turn_started"}:
+            if p.get("type") in TURN_STARTS:
                 complete, final = False, False
             elif p.get("type") in {"task_complete", "turn_completed"}:
                 complete = True
@@ -544,20 +563,59 @@ def read_node(path):
     }
 
 
-def check_inherited_history(parent, child, call_id):
+def embeds(inherited, available, required):
+    """Whether inherited is an ordered subsequence that keeps every required item."""
+    # reachable[i]: inherited[:i] matched so far without skipping a required item.
+    reachable = [True] + [False] * len(inherited)
+    for original, needed in zip(available, required):
+        nxt = [False] * len(reachable)
+        for i, ok in enumerate(reachable):
+            if not ok:
+                continue
+            if not needed:
+                nxt[i] = True
+            if i < len(inherited) and inherited[i] == original:
+                nxt[i + 1] = True
+        reachable = nxt
+    return reachable[-1]
+
+
+def check_inherited_history(parent, child, call_id, fork):
+    """Require copied parent messages to cover the requested turn scope.
+
+    Turns start at task_started/turn_started. The dispatching turn is still in
+    progress: its user messages are required, while its assistant messages may
+    be absent because runtimes do not copy them consistently. Every earlier turn
+    in scope is required in full. A numeric fork is read as the dispatching turn
+    plus the N-1 turns before it; no authoritative source defines N, so only
+    this reading can pass. Messages copied from outside the scope cannot pass.
+    """
     boundary = child["meta"].get("subagent_history_start_ordinal")
     if type(boundary) is not int or boundary <= 0:
         raise Unverifiable("missing/invalid child history boundary")
     inherited = child.get("inherited_history", [])
-    available = parent.get("spawn_history", {}).get(call_id, [])
-    if not inherited or not available or not all(history_message(p) for p in inherited):
+    snapshot = parent.get("spawn_history", {}).get(call_id) or {}
+    turns = snapshot.get("turns", [])
+    if snapshot.get("gap"):
+        raise Unverifiable(snapshot["gap"] + " before spawn")
+    if (
+        not inherited
+        or not any(turns)
+        or not all(history_message(p) for p in inherited)
+    ):
         raise Unverifiable("missing inherited parent history content")
-    # Copied history can contain a bounded slice. Every observed inherited
-    # message must match the parent's context before this dispatch, in order.
-    remaining = iter(available)
-    for message in inherited:
-        if not any(message == original for original in remaining):
-            raise Unverifiable("inherited history does not match parent before spawn")
+    everything = [p for t in turns for p in t]
+    if not embeds(inherited, everything, [False] * len(everything)):
+        raise Unverifiable("inherited history does not match parent before spawn")
+    scope = turns if fork == "all" else turns[-int(fork) :]
+    available = [p for t in scope for p in t]
+    required = [True for t in scope[:-1] for _ in t] + [
+        p.get("role") == "user" for p in scope[-1]
+    ]
+    if not embeds(inherited, available, [False] * len(available)):
+        raise Unverifiable(f"inherited history exceeds fork_turns={fork} scope")
+    if not embeds(inherited, available, required):
+        raise Unverifiable(f"inherited history does not cover fork_turns={fork} scope")
 
 
 def check_tree(
@@ -634,7 +692,7 @@ def check_tree(
                 raise Unverifiable("child matched twice")
             matched.add(tid)
             if fork != "none":
-                check_inherited_history(node, child, cid)
+                check_inherited_history(node, child, cid, fork)
             for param, field in (("model", "model"), ("reasoning_effort", "effort")):
                 configured = defaults or {}
                 role = configured.get("roles", {}).get(

@@ -12,11 +12,14 @@ bounded scenario after authorization; the default is all three.
 
 Before testing inheritance, inspect the rendered spawn schema and active host
 policy. Choose a historical scope that both permit: `--inheritance-fork all`
-(the default), or `--inheritance-fork N` for a positive turn count when supported.
-The prompt and checker both bind to that choice. `none` tests fresh context and
-cannot satisfy inheritance. Keep host paths and exceptions in host configuration;
-use the existing guards during the test. If there is no common historical scope,
-run the feasible subset with an explicit gap:
+(the default), or `--inheritance-fork N` for a positive turn count when the
+schema offers one. The Codex 0.162.1 MultiAgentV2 handler accepts only `none`
+or `all`, and no runtime source defines numeric counts; the checker applies the
+turn semantics below. The prompt and checker both bind to that choice. `none`
+tests fresh context and cannot satisfy inheritance. Keep host paths and
+exceptions in host configuration; use the existing guards during the test. If
+there is no common historical scope, run the feasible subset with an explicit
+gap:
 
 ```sh
 bash evals/live-check.sh --skip-inheritance 'Rendered schema and host policy permit no common historical fork'
@@ -32,13 +35,30 @@ requires inheritance at the recorded scope, override and irreversible to all
 pass; the default full-history claim requires an `all` run. A bounded fork leaves
 full-history behavior pending.
 
-History evidence requires a valid child ordinal boundary, nonempty inherited
-message content before it, and ordered matches in the parent's history before
-the corresponding spawn. Outer timestamps and ordinals can differ between
-copies. Metadata, the fork argument and matching models alone cannot pass this
-check. Resource selection is checked independently against role configuration,
-spawn arguments and defaults. Offline fixtures establish checker behavior;
-they do not establish a runtime inheritance defect or a successful live fork.
+History evidence requires a valid child ordinal boundary and nonempty
+inherited user/assistant message content before it. The checker splits the
+parent's history before the spawn into turns at `task_started`/`turn_started`
+events; the spawning turn is still in progress. The copied messages must appear
+in the parent's history in order and cover the recorded scope:
+
+- `all` covers every turn: each message of the earlier turns and the user
+  messages of the spawning turn. Assistant messages of the spawning turn are
+  optional because observed full forks omit its commentary.
+- `N` covers the spawning turn and the N-1 turns before it, with the same
+  requirements. Messages copied from turns before that scope are unverifiable.
+
+If any required message is missing, a message comes from outside the scope,
+a parent message precedes every turn boundary, or the parent recorded compaction,
+rollback or undo before the spawn, the result is `UNVERIFIABLE`. Missing
+coverage is not classified as `FAIL`, because no runtime source fixes which
+messages a fork copies. `FAIL` remains reserved for execution and fixture errors.
+The live scenario has a single parent turn, so it exercises only the spawning
+turn; offline fixtures cover multi-turn scopes. Outer timestamps and ordinals
+can differ between copies. Metadata, the fork argument and matching models
+alone cannot pass this check. Resource selection is checked independently
+against role configuration, spawn arguments and defaults. Offline fixtures
+establish checker behavior; they do not establish a runtime inheritance defect
+or a successful live fork.
 
 The irreversible check recognizes a small command-text grammar, including
 direct read commands, literal shell wrappers and command separators. Git query
