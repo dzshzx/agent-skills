@@ -1,6 +1,6 @@
 ---
 name: cross-agent-delegation
-description: Hand a task to a different vendor's coding agent CLI — Claude Code, Codex, or Kimi Code — by running it as a headless subprocess. Use when the user names one of them for a piece of work ("have Codex look at this", "give this one to Kimi", "ask Claude"), in any direction and for any kind of task. Not for subagents inside your own runtime, not for switching models within one harness, and not for delegation the user did not ask for.
+description: Hand a task to the other vendor's coding agent CLI — Claude Code or Codex — by running it as a headless subprocess, or by continuing an existing session the user names. Use when the user names one of them for a piece of work ("have Codex look at this", "ask Claude", "send this to that Codex thread"), in either direction and for any kind of task. Not for subagents inside your own runtime, not for switching models within one harness, and not for delegation the user did not ask for.
 ---
 
 # Cross-agent delegation
@@ -8,27 +8,29 @@ description: Hand a task to a different vendor's coding agent CLI — Claude Cod
 Each of these CLIs is a process: a dispatch starts work, observation tracks it, and acceptance
 checks the delivered result. One CLI invocation may make many model requests; its detailed
 reading, commands, and reasoning stay in captured logs for selective inspection.
-Any of the three takes any kind of work — planning, implementing,
+Either one takes any kind of work — planning, implementing,
 reviewing, explaining — and which one goes is the user's call, made per dispatch.
 
 **You are one of them.** When the named delegate is the runtime you already are, do the work
 directly; there is no subprocess.
 
 **Read the contract for the CLI you were named, and only that one:**
-[`references/claude.md`](references/claude.md), [`references/codex.md`](references/codex.md),
-[`references/kimi.md`](references/kimi.md). Each holds the minimal correct command, where the
+[`references/claude.md`](references/claude.md) or [`references/codex.md`](references/codex.md).
+Each holds the minimal correct command, where the
 answer and the continuation id sit in the output, and the failures that cost a retry.
+When the user names an existing session instead — a session id, a `codex://threads/<id>` link —
+the contract also says how to continue it.
 `evals/live-check.sh` holds the contracts to the installed CLIs: doubt a line when that script
 goes red, not when a version number moves.
 
 ## Prepare the handoff
 
 Run `command -v <cli>` for the CLI you were named. A spawned shell may not carry your PATH, and
-not every machine has all three. A missing binary is a stop, not a workaround.
+not every machine has both. A missing binary is a stop, not a workaround.
 
 **Set the working directory explicitly** — run the command from it, in a `( cd "$DIR" && … )`
-subshell or through your runtime's working-directory parameter. All three resolve the project,
-the repository, and their trust and permission scope from cwd, and none of them takes it from the
+subshell or through your runtime's working-directory parameter. Both resolve the project,
+the repository, and their trust and permission scope from cwd, and neither takes it from the
 prompt text. When the delegate will write, that directory is an isolated worktree whenever the
 host project's rules call for one; follow those rules rather than inventing isolation here.
 
@@ -64,9 +66,9 @@ quoting keeps the whole brief one argv entry, so backticks, `$(...)`, quotes and
 the delegate byte for byte, and the `--` stops Claude and Codex from reading a brief whose first
 line starts with `-` — a Markdown list item, a `---` front-matter fence — as an option (without
 it they fail at parse time, `unknown option` / `unexpected argument`, before any model call).
-Kimi takes the brief as the value of `-p` and needs no `--`. Building the command by
+Building the command by
 concatenating prompt text into it is how a delegation silently runs something else. Two limits:
-an empty brief is rejected by Claude and Kimi but sent by Codex as a real turn (hence the `-s`
+an empty brief is rejected by Claude but sent by Codex as a real turn (hence the `-s`
 check), and one argv entry is capped at 128 KiB on Linux — a brief that inlines a large diff or
 log fails with `Argument list too long` before the CLI starts; point the delegate at the file
 instead.
@@ -88,7 +90,7 @@ When you want a report rather than edits, say so in the brief; that is enough fo
 delegations.
 
 Restrict mechanically when the user asks for a locked-down run, or when a stray write would be
-expensive to notice. The three restrict differently, and the user's choice of delegate stands:
+expensive to notice. The two restrict differently, and the user's choice of delegate stands:
 when the named CLI cannot enforce the requested boundary, complete independent preparation
 and explain the unsupported restriction before dispatch. Ask for the missing alternative
 decision; a brief-level instruction is sufficient only when the user has not required a
@@ -101,9 +103,6 @@ mechanical restriction. Keep the user's choice of delegate unless they authorize
 - **Claude `--tools Read,Grep,Glob --strict-mcp-config`** — removes the built-in tools and every
   MCP server's tools; `--permission-mode dontAsk` is only as tight as the cwd's permission
   policy. The contract has the policy detail.
-- **Kimi `--agent explore`** (the shell stays) **or `--agent-file` with a `tools:` whitelist**
-  (drop it there) — restricts by tool set, not by flag. The contract has the set, the file-name
-  rule and what a resume keeps.
 
 ## Observe execution
 

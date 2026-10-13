@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 回归检测：核对 SKILL.md 与 references/*.md 缓存的三家 CLI 契约是否仍与本机实装一致。
-# 用法：bash evals/live-check.sh [--smoke] [--cli claude|codex|kimi|all]
+# 回归检测：核对 SKILL.md 与 references/*.md 缓存的两家 CLI 契约是否仍与本机实装一致。
+# 用法：bash evals/live-check.sh [--smoke] [--cli claude|codex|all]
 # Codex 成功须 rc=0、turn.completed、非空最终答复且无失败事件；只读文件未产生与 OS 拒写分开断言。
 #   默认档（surface + parser）：--help 是否仍列出所用 flag；参数解析层的拒绝/放行是否仍成立——`--` 之后以 `-` 开头的 brief
-#     过解析而没有 `--` 时被拒、空 prompt 的三家行为、启动失败写在 stdout 还是 stderr、契约里每种命令形态（exec / resume /
-#     review）可解析、`--permission-mode` 的 choices 含 bypassPermissions、Kimi 内置 agent explore 仍在、单个 argv 128 KiB 上限。
-#     零模型调用且 fail-closed：会真启动的命令都跑在无凭证的 CODEX_HOME / 不存在的 Claude 与 Kimi 模型下，
+#     过解析而没有 `--` 时被拒、空 prompt 的两家行为、启动失败写在 stdout 还是 stderr、契约里每种命令形态（exec / resume /
+#     review）可解析、`--permission-mode` 的 choices 含 bypassPermissions、单个 argv 128 KiB 上限。
+#     零模型调用且 fail-closed：会真启动的命令都跑在无凭证的 CODEX_HOME / 不存在的 Claude 模型下，
 #     契约一旦失效（原本该被拒的命令被接受）会在 401 / 模型解析处失败，而不是悄悄花一次调用。
-#   --smoke：真跑约 30 次小调用（计费；三家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
+#   --smoke：真跑约 30 次小调用（计费；两家凭证都要在位，缺一家该家整段红），解析 JSON 并断言
 #     字段、退出码、续跑与权限行为、brief 经 argv 原样到达。每条契约命令行都按 references 里的形态真跑（`--` 在前、
 #     `--sandbox` 在 resume 之前、bypassPermissions）；hostile brief 首行以 `- ` 开头。FAIL 行下附 stderr 尾巴，用来区分
 #     「行为断言失败」与「调用本身失败（401 / 限流 / 网络）」——后者不是契约失效。Codex 调用遇到 API 安全层整轮拒绝
@@ -37,7 +37,7 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
-case "$CLI" in claude | codex | kimi | all) ;; *)
+case "$CLI" in claude | codex | all) ;; *)
   echo "Invalid CLI: $CLI" >&2
   exit 2
   ;;
@@ -65,13 +65,13 @@ cleanup() {
 trap cleanup EXIT
 NOAUTH="$W/codex-home"
 mkdir -p "$NOAUTH"           # 空 CODEX_HOME：无凭证，启动后必 401
-BOGUS=bogus-model-live-check # 不存在的模型名：Claude 在 API 调用前、Kimi 在模型解析处失败
+BOGUS=bogus-model-live-check # 不存在的模型名：Claude 在 API 调用前失败
 NONGIT="$W/nongit"
 mkdir -p "$NONGIT"
 # py <file> <expr>：对 JSON 文件求值；<expr> 里用 d 表示解析结果，结果为真则退出 0
 py() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if eval(sys.argv[2]) else 1)' "$1" "$2" 2>/dev/null; }
 
-for c in claude codex kimi; do
+for c in claude codex; do
   selected "$c" || continue
   command -v "$c" >/dev/null 2>&1 || {
     echo "缺少 $c，无法检测"
@@ -80,7 +80,7 @@ for c in claude codex kimi; do
 done
 
 echo "== 实装版本（契约是否成立由下面的断言决定，不由版本号决定）"
-for c in claude codex kimi; do selected "$c" && printf '  %s %s\n' "$c" "$("$c" --version 2>/dev/null)"; done
+for c in claude codex; do selected "$c" && printf '  %s %s\n' "$c" "$("$c" --version 2>/dev/null)"; done
 
 if selected claude; then
   echo "== Claude：flag 面"
@@ -183,62 +183,6 @@ if selected codex; then
     && ok "契约的 review 自定义 prompt 形态（-- 在 brief 之前）可解析（rc=$rc）" || no "review 的 -- 形态不再可解析（rc=$rc）：$(tail -c 160 "$W/e")"
 
 fi
-if selected kimi; then
-  echo "== Kimi：flag 面"
-  H=$(kimi --help 2>&1)
-  for f in "-S, --session" "--agent <name>" "--agent-file" "--output-format" "-p, --prompt"; do
-    has "$f" "$H" && ok "kimi --help 有 $f" || no "kimi --help 缺 $f"
-  done
-  AFD="$W/ro-agent.md"
-  printf -- '---\ndescription: Read-only\ntools: [Read]\n---\nprobe\n' >"$AFD"
-  (cd "$NONGIT" && timeout 60 kimi -p noop --agent-file "$AFD" -S session_bogus -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" \
-    && ok "--agent-file 与 -S 的组合仍被拒（真跑解析层，rc=$rc）" || no "--agent-file 与 -S 的互斥已失效（rc=$rc）：$(head -c 120 "$W/e")"
-  (cd "$NONGIT" && timeout 60 kimi -p noop --agent explore -S session_bogus -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" && has "restored automatically on resume" "$(cat "$W/e")" \
-    && ok "--agent 与 -S 同样互斥，报错仍写明 resume 自动恢复绑定的 agent（rc=$rc）" || no "--agent 与 -S 的互斥或 resume 恢复语义已变（rc=$rc）：$(head -c 120 "$W/e")"
-  AFBAD="$W/tmp.notkebab.md"
-  cp "$AFD" "$AFBAD" # 契约：agent 名取自文件 basename，须 kebab-case（mktemp 名会被拒）
-  (cd "$NONGIT" && timeout 60 kimi -p noop --agent-file "$AFBAD" -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && has "expected kebab-case" "$(cat "$W/e")" \
-    && ok "--agent-file 非 kebab-case 文件名在模型调用前被拒（rc=$rc）" || no "--agent-file 的文件名规则已变（rc=$rc）：$(head -c 120 "$W/e")"
-
-  echo "== Kimi：解析层拒绝（模型别名不存在，fail-closed）"
-  for f in --auto -y --yolo --plan; do
-    (cd "$NONGIT" && timeout 60 kimi -p noop "$f" -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-    rc=$?
-    [ "$rc" -ne 0 ] && has "Cannot combine" "$(cat "$W/e")" && ! grep -q '"role":"assistant"' "$W/o" \
-      && ok "kimi -p 仍拒绝 $f，原因在 stderr、stdout 无答案行（rc=$rc）" || no "kimi -p 对 $f 的拒绝行为已变（rc=$rc）"
-  done
-  (cd "$NONGIT" && timeout 60 kimi -p noop -r session_does-not-exist -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && has "not found" "$(cat "$W/e")" \
-    && ok "-r <id> 被当作 session id 解析（不存在即报错，非静默忽略）" || no "-r 的解析行为已变（rc=$rc）：$(head -c 120 "$W/e")"
-  (cd "$NONGIT" && timeout 60 kimi -p "--- item" -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && has "not configured" "$(cat "$W/e")" \
-    && ok "-p 的值以 --- 开头照常到达模型解析（无需 --，rc=$rc）" || no "-p 对以 - 开头的值的处理已变（rc=$rc）：$(head -c 120 "$W/e")"
-  (cd "$NONGIT" && timeout 60 kimi -p "" -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && has "Prompt cannot be empty" "$(cat "$W/e")" \
-    && ok "空 prompt 在解析层被拒（rc=$rc）" || no "空 prompt 的处理已变（rc=$rc）：$(head -c 120 "$W/e")"
-  (cd "$NONGIT" && timeout 60 kimi -p noop --agent no-such-agent-live-check -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && has "Unknown agent profile" "$(cat "$W/e")" \
-    && ok "未知 --agent 在模型调用前被拒（rc=$rc）" || no "--agent 的名字校验已变（rc=$rc）：$(head -c 120 "$W/e")"
-  (cd "$NONGIT" && timeout 60 kimi -p noop --agent explore -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -ne 0 ] && ! has "Unknown agent profile" "$(cat "$W/e")" && has "not configured" "$(cat "$W/e")" \
-    && ok "内置 agent explore 仍在（止于模型解析，rc=$rc）" || no "--agent explore 不再存在或行为已变（rc=$rc）：$(head -c 120 "$W/e")"
-  # 契约：没有 -p 就进 TUI 挂住，关闭的 stdin 不放行；只有外层 timeout 能把它变成失败
-  (cd "$NONGIT" && timeout 5 kimi -m "$BOGUS" </dev/null >"$W/o" 2>"$W/e")
-  rc=$?
-  [ "$rc" -eq 124 ] && ok "无 -p：进入 TUI 并挂住，关闭的 stdin 不放行（timeout rc=124）" || no "无 -p 的 TUI 挂住行为已变（rc=$rc）：$(head -c 120 "$W/e")"
-
-fi
 echo "== 平台：单个 argv 上限"
 BIG=$(python3 -c 'print("x"*200000)')
 /bin/true "$BIG" 2>/dev/null
@@ -255,7 +199,7 @@ if [ "$SMOKE" -eq 1 ]; then
   mkdir -p "$S" # 目录名不用 claude：实测 cwd basename 为 claude 时会被 API 安全层误拦
   # jerr <json>：失败归因——Claude 的错误进 JSON 而非 stderr，打印 terminal_reason 与 result 头
   jerr() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("terminal_reason"),"|",str(d.get("result"))[:160])' "$1" 2>&1 | head -c 200; }
-  # 契约（SKILL.md）：brief 写进文件、以 -- "$(cat "$BRIEF")" 作单个 argv 传入（首行以 - 开头），shell 敏感片段原样到达。三家各跑一次。
+  # 契约（SKILL.md）：brief 写进文件、以 -- "$(cat "$BRIEF")" 作单个 argv 传入（首行以 - 开头），shell 敏感片段原样到达。两家各跑一次。
   # 用中性 token（echo tick / echo dollar）：whoami / pwned 这类探针措辞会被 OpenAI 的 API 安全层整轮拒绝（见 codex.md）
   HB="$W/hostile.md"
   cat >"$HB" <<'EOF'
@@ -436,12 +380,14 @@ PY
     R="$W/repo"
     mkdir -p "$R"
     (cd "$R" && git init -q -b master && printf 'a\n' >f.txt && git add f.txt && git -c user.name=lc -c user.email=lc@x commit -qm init && printf 'b\n' >>f.txt)
-    cx "$R" "$R/3.jsonl" codex exec --sandbox read-only review --uncommitted --json -o "$R/3.txt"
+    RE="$W/review" # 证据放在被审查仓之外：写进仓里会成为 --uncommitted 的审查对象
+    mkdir -p "$RE"
+    cx "$R" "$RE/3.jsonl" codex exec --sandbox read-only review --uncommitted --json -o "$RE/3.txt"
     rc=$?
-    [ "$rc" -eq 0 ] && [ -s "$R/3.txt" ] && ok "exec --sandbox read-only review --uncommitted --json -o 可跑" || no "review --uncommitted 形式失败（rc=$rc）：$(cerr "$R/3.jsonl")"
-    cx "$R" "$R/4.jsonl" codex exec --sandbox read-only review --json -o "$R/4.txt" -- "Review the working tree change to f.txt in one sentence."
+    [ "$rc" -eq 0 ] && [ -s "$RE/3.txt" ] && ok "exec --sandbox read-only review --uncommitted --json -o 可跑" || no "review --uncommitted 形式失败（rc=$rc）：$(cerr "$RE/3.jsonl")"
+    cx "$R" "$RE/4.jsonl" codex exec --sandbox read-only review --json -o "$RE/4.txt" -- "Review the working tree change to f.txt in one sentence."
     rc=$?
-    [ "$rc" -eq 0 ] && [ -s "$R/4.txt" ] && ok "exec --sandbox read-only review --json -o <prompt> 可跑" || no "review 自定义 prompt 形式失败（rc=$rc）：$(cerr "$R/4.jsonl")"
+    [ "$rc" -eq 0 ] && [ -s "$RE/4.txt" ] && ok "exec --sandbox read-only review --json -o <prompt> 可跑" || no "review 自定义 prompt 形式失败（rc=$rc）：$(cerr "$RE/4.jsonl")"
     P="$W/perm"
     mkdir -p "$P"
     cx "$P" "$P/ro.jsonl" codex exec --skip-git-repo-check --sandbox read-only --json -o "$P/ro-final.txt" -- "Write a text file at $P/ro.txt whose content is the word hi, then confirm in one sentence."
@@ -463,132 +409,6 @@ PY
     [ "$rc" -eq 0 ] && intact "$C/h.txt" \
       && ok '-- "$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（-o 文本）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(cerr "$C/h.jsonl") | $(head -c 120 "$C/h.txt" 2>/dev/null)"
 
-  fi
-  if selected kimi; then
-    echo "== smoke：Kimi（真跑）"
-    K="$W/c"
-    mkdir -p "$K"
-    last() {
-      python3 - "$1" <<'PY'
-import json,sys
-ans=sid=None
-for line in open(sys.argv[1]):
-    try: e=json.loads(line)
-    except Exception: continue
-    if e.get("role")=="assistant" and isinstance(e.get("content"),str): ans=e["content"]
-    if e.get("type")=="session.resume_hint": sid=e.get("session_id")
-print(sid or ""); print(ans or "")
-PY
-    }
-    (cd "$K" && timeout "$T" kimi -p "Remember this word and nothing else: pineapple. Reply with exactly: noted" --output-format stream-json >"$K/1.jsonl" 2>"$E")
-    rc=$?
-    {
-      read -r KSID
-      read -r ANS
-    } < <(last "$K/1.jsonl")
-    [ "$rc" -eq 0 ] && [ -n "$KSID" ] && has noted "$ANS" \
-      && ok "stream-json：最后一条带 content 的 assistant 行是答案，session.resume_hint 带 session_id" || no "stream-json 输出形状已变（rc=$rc）"
-    (cd "$K" && timeout "$T" kimi -p "What word did I ask you to remember? Reply with only that word." -S "$KSID" --output-format stream-json >"$K/2.jsonl" 2>"$E")
-    rc=$?
-    {
-      read -r _
-      read -r ANS
-    } < <(last "$K/2.jsonl")
-    [ "$rc" -eq 0 ] && has pineapple "$ANS" && ok "-S <id> 续跑能回忆上一轮" || no "-S 续跑失败或失忆（rc=$rc：$ANS）"
-    (cd "$K" && timeout "$T" kimi -p "What word did I ask you to remember? Reply with only that word." -r "$KSID" --output-format stream-json >"$K/3.jsonl" 2>"$E")
-    rc=$?
-    {
-      read -r _
-      read -r ANS
-    } < <(last "$K/3.jsonl")
-    [ "$rc" -eq 0 ] && has pineapple "$ANS" && ok "-r <id>（resume_hint 打印的形式）同样续跑成功" || no "-r 续跑失败或失忆（rc=$rc：$ANS）——契约说它与 -S 等价"
-    A="$K/ro.md"
-    printf -- '---\ndescription: Read-only\ntools: [Read, Grep, Glob]\n---\nReport what you find; you are not changing files.\n' >"$A"
-    F="$K/w.txt"
-    (cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi。做不到就只回复：NO-WRITE" --agent-file "$A" --output-format stream-json >"$K/4.jsonl" 2>"$E")
-    rc=$?
-    {
-      read -r _
-      read -r ANS
-    } < <(last "$K/4.jsonl")
-    [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has NO-WRITE "$ANS" \
-      && ok "tools 白名单：运行成功，写工具不存在，文件未产生，模型自报 NO-WRITE" || no "tools 白名单断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)，答复：${ANS:0:80}）"
-    A2="$K/rw.md"
-    printf -- '---\ndescription: Read-only with shell\ntools: [Read, Grep, Glob, Bash]\n---\nReport what you find; you are not changing files.\n' >"$A2"
-    F="$K/w2.txt"
-    # 自报走 shell：没有 Write 时模型只能用 Bash echo 出 NO-WRITE-TOOL，落在 tool 结果流里——grep jsonl 断言，不看散文
-    (cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi——只用 Write 工具，不要用 Bash 写文件。如果你的工具集没有 Write 工具，就用 Bash 运行 echo NO-WRITE-TOOL 代替。" --agent-file "$A2" --output-format stream-json >"$K/5.jsonl" 2>"$E")
-    rc=$?
-    # called <jsonl>：单行输出本 run 调用过的工具名——shell 恢复看 tool_calls 证据，不只信模型自报
-    called() {
-      python3 - "$1" <<'PY'
-import json,sys
-names=set()
-for line in open(sys.argv[1]):
-    try: e=json.loads(line)
-    except Exception: continue
-    for tc in (e.get("tool_calls") or []):
-        n=(tc.get("function") or {}).get("name") or tc.get("name")
-        if n: names.add(n)
-print(" ".join(sorted(names)))
-PY
-    }
-    CALLED=$(called "$K/5.jsonl")
-    [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/5.jsonl" \
-      && ok "放宽白名单 [Read,Grep,Glob,Bash]：Bash 在（回显 NO-WRITE-TOOL），Write 缺席（调用面：$CALLED）" || no "放宽白名单断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
-    F="$K/w3.txt"
-    # 契约：--agent explore 是同一工具面的单 flag 形式——不写 agent 文件，Bash 在、Write 缺席
-    (cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi——只用 Write 工具，不要用 Bash 写文件。如果你的工具集没有 Write 工具，就用 Bash 运行 echo NO-WRITE-TOOL 代替。" --agent explore --output-format stream-json >"$K/6.jsonl" 2>"$E")
-    rc=$?
-    CALLED=$(called "$K/6.jsonl")
-    [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/6.jsonl" \
-      && ok "--agent explore：Bash 在（回显 NO-WRITE-TOOL），Write 缺席，无需 agent 文件（调用面：$CALLED）" || no "--agent explore 的工具面断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
-    # 契约：-S 续跑不接 --agent，创建时绑定的 agent 自动恢复——explore 会话续跑仍无 Write
-    {
-      read -r XSID
-      read -r _
-    } < <(last "$K/6.jsonl")
-    F="$K/w5.txt"
-    (cd "$K" && timeout "$T" kimi -p "创建文件 $F，内容 hi——只用 Write 工具，不要用 Bash 写文件。如果你的工具集没有 Write 工具，就用 Bash 运行 echo NO-WRITE-TOOL 代替。" -S "$XSID" --output-format stream-json >"$K/9.jsonl" 2>"$E")
-    rc=$?
-    CALLED=$(called "$K/9.jsonl")
-    [ "$rc" -eq 0 ] && [ ! -f "$F" ] && has Bash "$CALLED" && ! has Write "$CALLED" && grep -q NO-WRITE-TOOL "$K/9.jsonl" \
-      && ok "--agent explore 会话 -S 续跑：Write 仍缺席、Bash 在（调用面：$CALLED）——agent 随会话恢复" || no "explore 会话续跑的工具面断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
-    # 契约：explore 能读图——ReadMediaFile 在工具面里且真的被调用（text-heavy-visual-workflow 的美学咨询/交付前检查靠它）；
-    # 默认姿态（无 --agent）同样读图且可写。证据看 tool_calls 与落盘文件，不看模型自报。
-    IMG="$K/px.png"
-    python3 -c 'import zlib,struct,sys
-def chunk(t,d): return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
-raw=b"".join(b"\x00"+bytes([255,0,0]*2) for _ in range(2))
-sys.stdout.buffer.write(b"\x89PNG\r\n\x1a\n"+chunk(b"IHDR",struct.pack(">IIBBBBB",2,2,8,2,0,0,0))+chunk(b"IDAT",zlib.compress(raw))+chunk(b"IEND",b""))' >"$IMG"
-    (cd "$K" && timeout "$T" kimi -p "Look at the image file $IMG and reply with only its dominant color name." --agent explore --output-format stream-json >"$K/7.jsonl" 2>"$E")
-    rc=$?
-    CALLED=$(called "$K/7.jsonl")
-    [ "$rc" -eq 0 ] && has ReadMediaFile "$CALLED" \
-      && ok "--agent explore：读图走 ReadMediaFile（调用面：$CALLED）" || no "--agent explore 读图断言失败（rc=$rc，调用面：$CALLED）"
-    F="$K/w4.txt"
-    (cd "$K" && timeout "$T" kimi -p "Look at the image file $IMG, then create the file $F containing only its dominant color name." --output-format stream-json >"$K/8.jsonl" 2>"$E")
-    rc=$?
-    CALLED=$(called "$K/8.jsonl")
-    [ "$rc" -eq 0 ] && has ReadMediaFile "$CALLED" && [ -f "$F" ] \
-      && ok "默认姿态：读图走 ReadMediaFile 且文件已落盘（可读图、可写；调用面：$CALLED）" || no "默认姿态断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)，调用面：$CALLED）"
-    # kans <jsonl> <out>：把最后一条带 content 的 assistant 行原样写进文件（多行答复不经 read 截断）
-    kans() {
-      python3 - "$1" "$2" <<'PY'
-import json,sys
-ans=""
-for line in open(sys.argv[1]):
-    try: e=json.loads(line)
-    except Exception: continue
-    if e.get("role")=="assistant" and isinstance(e.get("content"),str): ans=e["content"]
-open(sys.argv[2],"w").write(ans)
-PY
-    }
-    (cd "$K" && timeout "$T" kimi -p "$(cat "$HB")" --output-format stream-json >"$K/h.jsonl" 2>"$E")
-    rc=$?
-    kans "$K/h.jsonl" "$K/h.txt"
-    [ "$rc" -eq 0 ] && intact "$K/h.txt" \
-      && ok '"$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（最后一条 assistant content，-p 取值无需 --）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$K/h.txt" 2>/dev/null)"
   fi
 fi
 

@@ -167,7 +167,7 @@ class CliSelectionTests(unittest.TestCase):
     def test_codex_only_does_not_call_other_vendors(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for name in ["claude", "codex", "kimi"]:
+            for name in ["claude", "codex"]:
                 path = root / name
                 path.write_text(
                     '#!/bin/sh\nprintf "%s\\n" "${0##*/}" >> "$CALLS"\nexit 1\n'

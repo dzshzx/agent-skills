@@ -27,14 +27,12 @@ class VerifyTest(unittest.TestCase):
         for name in ("alpha", "beta", "sync-agents-instructions"):
             directory = self.root / "skills" / name / "evals"
             directory.mkdir(parents=True)
-            (directory / "live-check.sh").write_text(
-                f"codex {name}\nclaude {name}\nkimi {name}\n"
-            )
+            (directory / "live-check.sh").write_text(f"codex {name}\nclaude {name}\n")
             (directory / "check.sh").write_text("exit 0\n")
         binaries = self.root / "bin"
         binaries.mkdir()
         self.record = self.root / "calls"
-        for name in ("codex", "claude", "kimi", "shellcheck"):
+        for name in ("codex", "claude", "shellcheck"):
             path = binaries / name
             body = (
                 "exit 0"
@@ -104,14 +102,14 @@ class VerifyTest(unittest.TestCase):
             self.assertEqual(calls, [])
 
     def test_existing_live_selection(self):
-        for args, expected in (((), 0), (("alpha",), 3), (("--all",), 9)):
+        for args, expected in (((), 0), (("alpha",), 2), (("--all",), 6)):
             result, calls = self.run_verify(*args)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(len(calls), expected)
         (self.root / "skills/alpha/SKILL.md").write_text("changed\n")
         result, calls = self.run_verify()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(len(calls), 3)
+        self.assertEqual(len(calls), 2)
 
     def test_mechanical_failure_propagates_offline(self):
         (self.root / "scripts/check-offline.sh").write_text("exit 1\n")

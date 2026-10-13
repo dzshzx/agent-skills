@@ -5,7 +5,7 @@
 #           check-commit-subjects.sh（commitlint 校验 origin/master..HEAD 的提交标题）——与 CI 同一组命令。
 #   真跑门：对「相对 origin/master 有改动（含未提交）」的 skill 跑 skills/<name>/evals/live-check.sh；
 #           --all 跑全部 skill（查 CLI 版本漂移）；显式给 skill 名只跑那些；--no-live 只跑机械门。
-#   真跑会计费（Claude / Codex / Kimi 真调用）且要求本机装有对应 CLI 与凭证，因此只在本地跑，不进 CI。
+#   真跑会计费（Claude / Codex 真调用）且要求本机装有对应 CLI 与凭证，因此只在本地跑，不进 CI。
 #   每个 skill 以其完整档运行（cross-agent-delegation 传 --smoke）。
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

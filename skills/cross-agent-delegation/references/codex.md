@@ -41,6 +41,54 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   brief can pass once and fail the next time. A custom `model_instructions_file` rides on every
   turn, so its wording trips the filter just the same — when harmless briefs keep failing,
   re-run with a stock config. Not a CLI failure — rephrase and re-dispatch.
+- One process at a time writes a thread: whoever loads it holds an OS lock on
+  `$CODEX_HOME/thread-writer-locks/<id>.lock` until the thread unloads. The local app-server
+  daemon, which the Codex app and an attached TUI use, unloads a thread only after no client has
+  been subscribed for `thread_unload_delay_secs` (default 60), and the app stays subscribed to
+  threads it has opened until it quits. `exec resume` on such a thread fails before any model
+  call: exit 1, no stdout events, and stderr reads
+  `thread/resume failed: thread <id> already has an active writer (code -32600)`. `exec` always
+  runs its own in-process server and cannot attach to the daemon (`codex --remote … exec` is
+  rejected). Never delete the lock file: its holder is still writing. A `codex://threads/<id>`
+  link carries the id; `thread/loaded/list` (below) tells whether the daemon holds it, and when it
+  does not, `exec resume` works as above. Observed with Codex 0.162.1 and its `rust-v0.162.1`
+  source; upstream tracks the long hold as openai/codex#37450. live-check does not cover this path.
+- To continue such a thread, send the brief as a new turn through the daemon. The turn is written
+  to that thread's history and runs under the thread's own sandbox and approval settings. The
+  control socket `$CODEX_HOME/app-server-control/app-server-control.sock` speaks JSON-RPC over
+  WebSocket: raw JSON lines get no reply, and `codex app-server proxy` only relays bytes, so it
+  needs a WebSocket client too. Send `initialize` with `clientInfo`, the `initialized`
+  notification, then `turn/start`. A `result.turn.status` of `inProgress` is the dispatch receipt,
+  and the turn keeps running after you disconnect. Approval requests go to the connection that
+  started the turn, so disconnecting suits threads whose approval policy does not ask; otherwise
+  stay connected and answer them. Start only on an idle thread, one whose rollout
+  (`$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl`) ends in `task_complete`, and read that rollout
+  for progress and the final answer. `codex app-server generate-json-schema --out <dir>` prints the
+  method schemas when a field is in doubt.
+
+  ```python
+  # uv run --no-project --with websockets python -I send.py <thread_id> "$BRIEF"
+  import asyncio, json, os, sys
+  from websockets.asyncio.client import unix_connect
+
+  async def main(thread_id, brief):
+      sock = os.path.join(os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex")),
+                          "app-server-control", "app-server-control.sock")
+      async with unix_connect(os.path.realpath(sock), uri="ws://localhost/") as ws:
+          async def call(rid, method, params):
+              await ws.send(json.dumps({"id": rid, "method": method, "params": params}))
+              while (m := json.loads(await ws.recv())).get("id") != rid:
+                  pass
+              return m
+          await call(1, "initialize", {"clientInfo": {"name": "delegation", "version": "0"}})
+          await ws.send(json.dumps({"method": "initialized"}))
+          text = open(brief, encoding="utf-8").read()
+          print(await call(2, "turn/start", {"threadId": thread_id,
+                                             "input": [{"type": "text", "text": text}]}))
+
+  asyncio.run(main(*sys.argv[1:3]))
+  ```
+
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
   `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes _before_
   `review` — after it, it is an unexpected argument. A target and a custom prompt are exclusive:
