@@ -52,42 +52,24 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   rejected). Never delete the lock file: its holder is still writing. A `codex://threads/<id>`
   link carries the id; `thread/loaded/list` (below) tells whether the daemon holds it, and when it
   does not, `exec resume` works as above. Observed with Codex 0.162.1 and its `rust-v0.162.1`
-  source; upstream tracks the long hold as openai/codex#37450. live-check does not cover this path.
-- To continue such a thread, send the brief as a new turn through the daemon. The turn is written
-  to that thread's history and runs under the thread's own sandbox and approval settings. The
-  control socket `$CODEX_HOME/app-server-control/app-server-control.sock` speaks JSON-RPC over
-  WebSocket: raw JSON lines get no reply, and `codex app-server proxy` only relays bytes, so it
-  needs a WebSocket client too. Send `initialize` with `clientInfo`, the `initialized`
-  notification, then `turn/start`. A `result.turn.status` of `inProgress` is the dispatch receipt,
-  and the turn keeps running after you disconnect. Approval requests go to the connection that
-  started the turn, so disconnecting suits threads whose approval policy does not ask; otherwise
-  stay connected and answer them. Start only on an idle thread, one whose rollout
-  (`$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl`) ends in `task_complete`, and read that rollout
-  for progress and the final answer. `codex app-server generate-json-schema --out <dir>` prints the
-  method schemas when a field is in doubt.
+  source; upstream tracks the long hold as openai/codex#37450. live-check's smoke tier covers this path.
+- To continue such a thread, send the brief as a new turn through the daemon with the bundled
+  script; the turn is written to that thread's history and runs under the thread's own sandbox
+  and approval settings:
 
-  ```python
-  # uv run --no-project --with websockets python -I send.py <thread_id> "$BRIEF"
-  import asyncio, json, os, sys
-  from websockets.asyncio.client import unix_connect
-
-  async def main(thread_id, brief):
-      sock = os.path.join(os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex")),
-                          "app-server-control", "app-server-control.sock")
-      async with unix_connect(os.path.realpath(sock), uri="ws://localhost/") as ws:
-          async def call(rid, method, params):
-              await ws.send(json.dumps({"id": rid, "method": method, "params": params}))
-              while (m := json.loads(await ws.recv())).get("id") != rid:
-                  pass
-              return m
-          await call(1, "initialize", {"clientInfo": {"name": "delegation", "version": "0"}})
-          await ws.send(json.dumps({"method": "initialized"}))
-          text = open(brief, encoding="utf-8").read()
-          print(await call(2, "turn/start", {"threadId": thread_id,
-                                             "input": [{"type": "text", "text": text}]}))
-
-  asyncio.run(main(*sys.argv[1:3]))
+  ```bash
+  uv run --script scripts/codex_thread_turn.py "$THREAD_ID" "$BRIEF" [--wait] [--timeout 1800]
   ```
+
+  Without `--wait` it returns once the daemon accepts the turn (exit 0, ids on stderr) and the
+  turn keeps running; read its progress and answer from the thread's rollout
+  (`$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl`, finished at `task_complete`). With `--wait` it
+  stays subscribed and prints the final answer. Exit 3 means there is no daemon or it does not hold the thread —
+  use `exec resume`; 4 means a turn is already running; 5 means the turn sent a request the script cannot answer, such as an approval, so the user answers it in the app; 124 is a `--wait` timeout with the
+  turn still running. The daemon speaks experimental JSON-RPC over WebSocket on
+  `$CODEX_HOME/app-server-control/app-server-control.sock`;
+  `codex app-server generate-json-schema --out <dir>` prints the method schemas when the script
+  needs a change.
 
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
   `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes _before_

@@ -59,6 +59,10 @@ has() { printf '%s' "$2" | grep -qF -- "$1"; }
 T=${LIVE_CHECK_TIMEOUT:-300} # 单次真跑上限（秒）
 W=$(mktemp -d "${LIVE_CHECK_EVIDENCE_DIR:-${TMPDIR:-/tmp}}/cross-agent-live.XXXXXX")
 cleanup() {
+  # 守护进程里的测试会话：断言途中中断也要归档，免得留在用户的会话列表
+  if [ -s "$W/daemon/id" ] && [ ! -e "$W/daemon/archived" ]; then
+    uv run -q --script "$HERE/codex_daemon_thread.py" archive "$(cat "$W/daemon/id")" >/dev/null 2>&1
+  fi
   rm -rf "$NOAUTH"
   echo "Evidence: $W"
 }
@@ -181,6 +185,17 @@ if selected codex; then
   rc=$?
   [ "$rc" -ne 2 ] && ! has "unexpected argument" "$(cat "$W/e")" \
     && ok "契约的 review 自定义 prompt 形态（-- 在 brief 之前）可解析（rc=$rc）" || no "review 的 -- 形态不再可解析（rc=$rc）：$(tail -c 160 "$W/e")"
+  # 守护进程会话续跑脚本：零模型调用，只走 initialize 与 thread/loaded/list；本机没有守护进程时跳过
+  DAEMON_SOCK="${CODEX_HOME:-$HOME/.codex}/app-server-control/app-server-control.sock"
+  printf 'noop\n' >"$W/daemon-brief.md"
+  if [ -S "$(readlink -f "$DAEMON_SOCK")" ]; then
+    uv run -q --script "$HERE/../scripts/codex_thread_turn.py" 00000000-0000-7000-8000-000000000000 "$W/daemon-brief.md" >"$W/o" 2>"$W/e"
+    rc=$?
+    [ "$rc" -eq 3 ] && has "use exec resume" "$(cat "$W/e")" \
+      && ok "codex_thread_turn.py：守护进程未持有的会话退出 3，指向 exec resume" || no "codex_thread_turn.py 对未持有会话的判定已变（rc=$rc）：$(tail -c 160 "$W/e")"
+  else
+    echo "  skip 本机没有 Codex app-server 守护进程，跳过 codex_thread_turn.py"
+  fi
 
 fi
 echo "== 平台：单个 argv 上限"
@@ -408,6 +423,31 @@ PY
     rc=$?
     [ "$rc" -eq 0 ] && intact "$C/h.txt" \
       && ok '-- "$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（-o 文本）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(cerr "$C/h.jsonl") | $(head -c 120 "$C/h.txt" 2>/dev/null)"
+    # 守护进程持有的会话：exec resume 被写者锁拒绝，codex_thread_turn.py 经 socket 续跑；测试会话用完归档
+    if [ -S "$(readlink -f "$DAEMON_SOCK")" ]; then
+      D="$W/daemon"
+      mkdir -p "$D"
+      timeout "$T" uv run -q --script "$HERE/codex_daemon_thread.py" start "$D" "$D/id" >/dev/null 2>"$D/start.err"
+      rc=$?
+      DTID=$(cat "$D/id" 2>/dev/null)
+      if [ "$rc" -eq 0 ] && [ -n "$DTID" ]; then
+        (cd "$D" && timeout 120 codex exec --sandbox read-only resume --skip-git-repo-check --json -- "$DTID" "Reply with exactly: OK" </dev/null >"$D/resume.jsonl" 2>"$D/resume.err")
+        rc=$?
+        [ "$rc" -eq 1 ] && has "already has an active writer" "$(cat "$D/resume.err")" \
+          && ok "守护进程持有的会话：exec resume 在模型调用前报 active writer（rc=1）" || no "守护进程持有会话时 exec resume 的行为已变（rc=$rc）：$(tail -c 160 "$D/resume.err")"
+        printf 'Reply with exactly: OK-DAEMON\n' >"$D/brief.md"
+        uv run -q --script "$HERE/../scripts/codex_thread_turn.py" "$DTID" "$D/brief.md" --wait --timeout "$T" >"$D/turn.out" 2>"$D/turn.err"
+        rc=$?
+        [ "$rc" -eq 0 ] && has OK-DAEMON "$(cat "$D/turn.out")" \
+          && ok "codex_thread_turn.py --wait：经守护进程续跑并输出最终答复" || no "codex_thread_turn.py 续跑失败（rc=$rc）：$(tail -c 160 "$D/turn.err")"
+        uv run -q --script "$HERE/codex_daemon_thread.py" archive "$DTID" >/dev/null 2>"$D/archive.err" \
+          && : >"$D/archived" || no "测试会话 $DTID 归档失败：$(tail -c 160 "$D/archive.err")"
+      else
+        no "无法在守护进程里创建测试会话（rc=$rc）：$(tail -c 160 "$D/start.err")"
+      fi
+    else
+      echo "  skip 本机没有 Codex app-server 守护进程，跳过守护进程会话续跑"
+    fi
 
   fi
 fi
