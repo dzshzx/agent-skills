@@ -216,7 +216,7 @@ def main():
     parser.add_argument(
         "--steer",
         action="store_true",
-        help="insert the brief into the thread's running turn (turn/steer); exit 4 if none",
+        help="insert the brief into the thread's running turn (turn/steer); exit 1 if none",
     )
     parser.add_argument(
         "--timeout", type=float, default=1800, help="seconds to wait with --wait"
