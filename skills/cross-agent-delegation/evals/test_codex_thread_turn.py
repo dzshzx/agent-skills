@@ -42,6 +42,14 @@ class CodexThreadTurnTest(unittest.TestCase):
             self.assertEqual(result.returncode, 3, result.stderr)
             self.assertIn("use exec resume", result.stderr)
 
+    def test_steer_without_daemon_still_points_to_exec_resume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            brief = Path(tmp) / "brief.md"
+            brief.write_text("hello\n")
+            result = run("thread-id", str(brief), "--steer", codex_home=tmp)
+            self.assertEqual(result.returncode, 3, result.stderr)
+            self.assertIn("use exec resume", result.stderr)
+
     def test_empty_brief_is_rejected_before_connecting(self):
         with tempfile.TemporaryDirectory() as tmp:
             brief = Path(tmp) / "brief.md"

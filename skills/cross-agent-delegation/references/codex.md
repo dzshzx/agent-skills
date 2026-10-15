@@ -70,6 +70,13 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   `$CODEX_HOME/app-server-control/app-server-control.sock`;
   `codex app-server generate-json-schema --out <dir>` prints the method schemas when the script
   needs a change.
+  Add `--steer` to insert the brief into the thread's running turn instead of exit 4
+  (`turn/steer` with `expectedTurnId` set to the in-progress turn; the stderr ids line gains
+  `"steered": true`, and `--wait` waits for that turn). Use it to feed a review conclusion or a
+  correction to a Codex turn that is still working. It never starts a turn: an idle thread exits 1,
+  and the other exits are unchanged. Limits: the text joins the turn at the model's next step, not
+  instantly; it cannot change the turn's sandbox or model; if the turn ends between the check and
+  the call the daemon rejects it (exit 1), so resend without `--steer`.
 
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
   `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes _before_

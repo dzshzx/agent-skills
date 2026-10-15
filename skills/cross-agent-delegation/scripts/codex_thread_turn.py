@@ -3,11 +3,11 @@
 # requires-python = ">=3.12"
 # dependencies = ["websockets>=15"]
 # ///
-"""Start a turn on a Codex thread held by the local app-server daemon.
+"""Start a turn on a Codex thread held by the local app-server daemon, or steer the running one.
 
 Exit codes: 0 sent (with --wait: turn completed, final answer on stdout);
-1 error or failed turn; 3 no daemon, or it does not hold the thread (use exec resume);
-4 the thread is busy; 5 the turn sent a request this script cannot answer, such as
+1 error or failed turn (with --steer, also a thread with no running turn: nothing is started); 3 no daemon, or it does not hold the thread (use exec resume);
+4 the thread is busy (without --steer); 5 the turn sent a request this script cannot answer, such as
 an approval; 124 --wait timed out (the turn keeps running).
 """
 
@@ -131,6 +131,45 @@ async def run(args):
                 "thread is in systemError; check it in the Codex app", file=sys.stderr
             )
             return 1
+        if args.steer:
+            if status != "active":
+                print(
+                    f"thread status is {status}; --steer needs a running turn",
+                    file=sys.stderr,
+                )
+                return 1
+            full = (
+                await conn.call(
+                    "thread/read", {"threadId": args.thread_id, "includeTurns": True}
+                )
+            )["thread"]
+            running = [
+                t for t in full.get("turns", []) if t.get("status") == "inProgress"
+            ]
+            if not running:
+                print("no in-progress turn found to steer", file=sys.stderr)
+                return 1
+            turn_id = running[-1]["id"]
+            if args.wait:
+                await conn.call(
+                    "thread/resume", {"threadId": args.thread_id, "excludeTurns": True}
+                )
+            steered = await conn.call(
+                "turn/steer",
+                {
+                    "threadId": args.thread_id,
+                    "expectedTurnId": turn_id,
+                    "input": [{"type": "text", "text": text}],
+                },
+            )
+            turn_id = steered["turnId"]
+            print(
+                json.dumps(
+                    {"thread_id": args.thread_id, "turn_id": turn_id, "steered": True}
+                ),
+                file=sys.stderr,
+            )
+            return await finish(conn, turn_id, args)
         if status != "idle":
             print(
                 f"thread status is {status}; send only to an idle thread",
@@ -151,20 +190,20 @@ async def run(args):
             json.dumps({"thread_id": args.thread_id, "turn_id": turn_id}),
             file=sys.stderr,
         )
-        if not args.wait:
-            return 0
-        try:
-            code, final = await asyncio.wait_for(
-                wait_for_turn(conn, turn_id), args.timeout
-            )
-        except TimeoutError:
-            print(
-                f"turn {turn_id} still running after {args.timeout}s", file=sys.stderr
-            )
-            return 124
-        if final:
-            print(final)
-        return code
+        return await finish(conn, turn_id, args)
+
+
+async def finish(conn, turn_id, args):
+    if not args.wait:
+        return 0
+    try:
+        code, final = await asyncio.wait_for(wait_for_turn(conn, turn_id), args.timeout)
+    except TimeoutError:
+        print(f"turn {turn_id} still running after {args.timeout}s", file=sys.stderr)
+        return 124
+    if final:
+        print(final)
+    return code
 
 
 def main():
@@ -173,6 +212,11 @@ def main():
     parser.add_argument("brief", help="file holding the brief")
     parser.add_argument(
         "--wait", action="store_true", help="stay connected and print the final answer"
+    )
+    parser.add_argument(
+        "--steer",
+        action="store_true",
+        help="insert the brief into the thread's running turn (turn/steer); exit 4 if none",
     )
     parser.add_argument(
         "--timeout", type=float, default=1800, help="seconds to wait with --wait"
