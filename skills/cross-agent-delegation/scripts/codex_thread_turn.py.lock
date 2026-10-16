@@ -3,7 +3,7 @@ revision = 5
 requires-python = ">=3.12"
 
 [manifest]
-requirements = [{ name = "websockets", specifier = ">=15" }]
+requirements = [{ name = "websockets", specifier = ">=17.2" }]
 
 [[package]]
 name = "websockets"
