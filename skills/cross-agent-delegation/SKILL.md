@@ -111,6 +111,8 @@ the supervisor's working context. Detailed logs stay in the task artifact direct
 relevant excerpts when diagnosing an anomaly or checking a deliverable. Prefer the host's
 completion notifications. If polling is needed, reuse the same run identifier and read a short
 status; follow the host's user-update requirements rather than a skill-wide polling interval.
+For a Codex thread, the progress script in [codex.md](references/codex.md) gives that status
+and can wait in the background for a question or completion.
 Update the summary on phase changes, blockers, or delivery. A quiet log alone does not show a
 stalled task and is not a reason to restart it.
 

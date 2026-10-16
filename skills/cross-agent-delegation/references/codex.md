@@ -78,6 +78,16 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   instantly; it cannot change the turn's sandbox or model; if the turn ends between the check and
   the call the daemon rejects it (exit 1), so resend without `--steer`.
 
+- To supervise a running thread (progress questions, or a notification when it needs the user),
+  read its rollouts with `uv run --script scripts/codex_thread_progress.py "$THREAD_ID"` instead of
+  hand-written `jq`: one report of assistant messages, questions to the user and their answers,
+  spawned subagents, and whether the root turn is still running. Run it with
+  `--wait question|complete|any` as a host background job so its exit fires the notification:
+  3 a question awaits the user (checked against the current state, so a pending one returns
+  at once), 0 the root turn completed after `--since` or, without it, after the script started,
+  124 timeout. Read-only; `--help`
+  has the options.
+
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
   `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes _before_
   `review` — after it, it is an unexpected argument. A target and a custom prompt are exclusive:
