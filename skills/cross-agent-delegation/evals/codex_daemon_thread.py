@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["websockets>=15"]
+# dependencies = ["websockets>=15.0.1"]
 # ///
 """live-check fixture: a throwaway thread held by the local Codex app-server daemon.
 
