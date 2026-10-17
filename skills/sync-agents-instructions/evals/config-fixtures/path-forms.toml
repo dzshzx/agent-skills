@@ -29,8 +29,8 @@ always_load_mode = "native"
 project_instruction_file = "sub\\GEMINI.md"
 
 [[agents]]
-name = "kimi-code"
-entry_file = "~/.kimi-code/AGENTS.md"
+name = "example-agent"
+entry_file = "~/.example-agent/AGENTS.md"
 always_load_mode = "mandatory-entry-read"
-project_instruction_file = ".kimi-code/AGENTS.md"
+project_instruction_file = ".example-agent/AGENTS.md"
 readonly_project_surfaces = ["AGENTS.md", "./AGENTS.md"]

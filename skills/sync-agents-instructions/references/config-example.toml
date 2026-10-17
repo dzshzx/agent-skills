@@ -34,9 +34,9 @@ load = "always"
 # Example of an on-demand domain slice (create one when the rules share a
 # cohesive theme an entry file can point at with a single trigger sentence):
 # [[shared_sources]]
-# path = "~/.config/agent-instructions/frontend.md"
-# role = "cross-project frontend standards"
-# domain = "frontend"
+# path = "~/.config/agent-instructions/<topic>.md"
+# role = "cross-project <topic> standards"
+# domain = "<topic>"
 # load = "on-demand"
 
 # One entry per AI agent on this machine. Each agent owns exactly one
@@ -73,9 +73,9 @@ runtime_constructs = ["apply_patch", "codex apply", "codex/{feature}"]
 # rights; removing a rule from such a surface must re-verify coverage
 # through this reader's own entry load route as well.
 # [[agents]]
-# name = "kimi-code"
-# entry_file = "~/.kimi-code/AGENTS.md"
+# name = "example-agent"
+# entry_file = "~/.example-agent/AGENTS.md"
 # always_load_mode = "mandatory-entry-read"
-# project_instruction_file = ".kimi-code/AGENTS.md"
-# skill_dirs = ["~/.agents/skills", "~/.kimi-code/skills"]
+# project_instruction_file = ".example-agent/AGENTS.md"
+# skill_dirs = ["~/.agents/skills", "~/.example-agent/skills"]
 # readonly_project_surfaces = ["AGENTS.md"]
