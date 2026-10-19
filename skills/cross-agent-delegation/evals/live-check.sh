@@ -13,6 +13,9 @@
 #     「行为断言失败」与「调用本身失败（401 / 限流 / 网络）」——后者不是契约失效。Codex 调用遇到 API 安全层整轮拒绝
 #     （turn.failed "flagged for possible cybersecurity risk"，codex.md 记载它不完全确定——同一 brief 可能一次过一次拒，
 #     brief 或自定义 model_instructions_file 的措辞都可能触发）时按契约重新派发，最多两次；仍拒才交给断言。
+#   --smoke 的 Claude 段整段跑在临时 CLAUDE_CONFIG_DIR 里（只复制 .credentials.json，结束即删临时凭据）：用户级 CLAUDE.md、
+#     settings（含 advisorModel）、hooks、MCP 都不进被测 run，会话记录也不进用户的配置目录；模型取 Claude Code 自身默认。
+#     默认档不调模型，不做此隔离。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
 set -u
 CLI=all
@@ -64,6 +67,7 @@ cleanup() {
     uv run -q --script "$HERE/codex_daemon_thread.py" archive "$(cat "$W/daemon/id")" >/dev/null 2>&1
   fi
   rm -rf "$NOAUTH"
+  rm -f "$W/claude-config/.credentials.json" # smoke 的临时凭据；会话记录留作证据
   echo "Evidence: $W"
 }
 trap cleanup EXIT
@@ -208,8 +212,7 @@ rc2=$?
 [ "$rc" -ne 0 ] && [ "$rc2" -eq 0 ] && ok "单个 argv 超过 128 KiB 时 exec 失败（rc=$rc），128 KiB 内放行——契约要求大材料走文件" || no "单个 argv 上限已变（200000B rc=$rc，131000B rc=$rc2）"
 
 if [ "$SMOKE" -eq 1 ]; then
-  E="$W/stderr"       # 每次真跑的 stderr；no() 失败时附其尾巴
-  CM="--model sonnet" # 默认模型 Fable 5 的 API 安全层会间歇性整轮拒绝这类探针式 prompt（api_error）；契约测的是 CLI，不是模型
+  E="$W/stderr" # 每次真跑的 stderr；no() 失败时附其尾巴
   S="$W/a"
   mkdir -p "$S" # 目录名不用 claude：实测 cwd basename 为 claude 时会被 API 安全层误拦
   # jerr <json>：失败归因——Claude 的错误进 JSON 而非 stderr，打印 terminal_reason 与 result 头
@@ -234,13 +237,25 @@ PY
   }
   if selected claude; then
     echo "== smoke：Claude（真跑）"
-    (cd "$S" && timeout "$T" claude -p --output-format json --permission-mode acceptEdits $CM -- "Remember this word and nothing else: pineapple. Reply with exactly: noted" </dev/null >"$S/1.json" 2>"$E")
+    # 隔离：整段在临时 CLAUDE_CONFIG_DIR 里跑（只复制凭据），用户级规则、settings、hooks、MCP 不进被测 run；
+    #   --resume 续跑沿用同一目录才找得到会话。临时凭据由 cleanup 删除。
+    CRED="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
+    CCD="$W/claude-config"
+    mkdir -p "$CCD"
+    [ -f "$CRED" ] && cp "$CRED" "$CCD/" || no "缺少 $CRED，无法在隔离的 CLAUDE_CONFIG_DIR 里认证"
+    ORIG_CCD=${CLAUDE_CONFIG_DIR-}
+    ORIG_CCD_SET=${CLAUDE_CONFIG_DIR+1}
+    export CLAUDE_CONFIG_DIR="$CCD"
+    (cd "$S" && timeout "$T" claude -p --output-format json --permission-mode acceptEdits -- "Remember this word and nothing else: pineapple. Reply with exactly: noted" </dev/null >"$S/1.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && py "$S/1.json" 'd["is_error"] is False and "noted" in d["result"] and d["session_id"] and isinstance(d["permission_denials"], list)' \
       && ok "成功运行：rc=0，.is_error=false，.result/.session_id/.permission_denials 在位" \
       || no "成功运行的 JSON 形状已变（rc=$rc）：$(jerr "$S/1.json")"
     SID=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["session_id"])' "$S/1.json" 2>/dev/null)
-    (cd "$S" && timeout "$T" claude -p --resume "$SID" --output-format json $CM -- "What word did I ask you to remember? Reply with only that word." </dev/null >"$S/2.json" 2>"$E")
+    [ -n "$SID" ] && compgen -G "$CCD/projects/*/$SID.jsonl" >/dev/null \
+      && ok "隔离：会话记录落在临时 CLAUDE_CONFIG_DIR" || no "会话记录未落在临时 CLAUDE_CONFIG_DIR（隔离未生效）"
+    printf '       model: %s\n' "$(python3 -c 'import json,sys;print(",".join(json.load(open(sys.argv[1])).get("modelUsage",{})))' "$S/1.json" 2>/dev/null)"
+    (cd "$S" && timeout "$T" claude -p --resume "$SID" --output-format json -- "What word did I ask you to remember? Reply with only that word." </dev/null >"$S/2.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && py "$S/2.json" 'd["is_error"] is False and "pineapple" in d["result"]' \
       && ok "--resume 续跑成功且能回忆上一轮" || no "--resume 续跑失败或失忆（rc=$rc）：$(jerr "$S/2.json")"
@@ -249,29 +264,29 @@ PY
     [ "$rc" -ne 0 ] && py "$S/3.json" 'd["is_error"] is True and d["subtype"] == "success" and d.get("terminal_reason")' \
       && ok "失败运行：rc≠0，.is_error=true，.terminal_reason 在位，而 .subtype 仍是 success" || no "失败运行的 JSON 形状已变（rc=$rc）"
     F="$S/deny.txt"
-    (cd "$S" && timeout "$T" claude -p --permission-mode dontAsk --output-format json $CM -- "Use the Write tool to create $F containing hi." </dev/null >"$S/4.json" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --permission-mode dontAsk --output-format json -- "Use the Write tool to create $F containing hi." </dev/null >"$S/4.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && [ ! -f "$F" ] && py "$S/4.json" 'd["is_error"] is False and len(d["permission_denials"]) > 0 and d["permission_denials"][0].get("tool_name")' \
-      && ok "dontAsk：运行成功，Write 被拒且记入 .permission_denials（本机 allow 规则未放行 Write）" || no "dontAsk 断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)）"
+      && ok "dontAsk：运行成功，Write 被拒且记入 .permission_denials（隔离配置里没有放行 Write 的 allow 规则）" || no "dontAsk 断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)）"
     F="$S/notool.txt"
     # 只看「文件不存在」会把启动失败也算作绿：要求 rc=0、JSON 非错误，且模型自报 NO-WRITE 作为它确实尝试过的证据
-    (cd "$S" && timeout "$T" claude -p --tools Read,Grep,Glob --output-format json $CM -- "Use the Write tool to create $F containing hi. If you cannot, reply with exactly: NO-WRITE" </dev/null >"$S/5.json" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --tools Read,Grep,Glob --output-format json -- "Use the Write tool to create $F containing hi. If you cannot, reply with exactly: NO-WRITE" </dev/null >"$S/5.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && [ ! -f "$F" ] && py "$S/5.json" 'd["is_error"] is False and "NO-WRITE" in d["result"]' \
       && ok "--tools Read,Grep,Glob：运行成功，Write 工具不存在，文件未产生，模型自报 NO-WRITE" || no "--tools 白名单断言失败（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)）"
     # 契约：acceptEdits 只放行编辑；-p 无法弹窗，Bash 被拒并记入 .permission_denials；--allowedTools 'Bash(<cmd>:*)' 逐条放行
     BASHP="Run this exact shell command with the Bash tool: python3 -c 'print(6*7)' . Reply with only the command's output. If the tool call is denied, reply with exactly: DENIED"
-    (cd "$S" && timeout "$T" claude -p --permission-mode acceptEdits --output-format json $CM -- "$BASHP" </dev/null >"$S/6.json" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --permission-mode acceptEdits --output-format json -- "$BASHP" </dev/null >"$S/6.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && py "$S/6.json" 'd["is_error"] is False and "DENIED" in d["result"] and d["permission_denials"] and d["permission_denials"][0].get("tool_name") == "Bash"' \
       && ok "acceptEdits：Bash 被自动拒绝并记入 .permission_denials（tool_name=Bash）" || no "acceptEdits 下 Bash 的拒绝行为已变（rc=$rc）：$(jerr "$S/6.json")"
-    (cd "$S" && timeout "$T" claude -p --permission-mode acceptEdits --allowedTools 'Bash(python3:*)' --output-format json $CM -- "$BASHP" </dev/null >"$S/7.json" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --permission-mode acceptEdits --allowedTools 'Bash(python3:*)' --output-format json -- "$BASHP" </dev/null >"$S/7.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && py "$S/7.json" 'd["is_error"] is False and "42" in d["result"] and d["permission_denials"] == []' \
       && ok "acceptEdits + --allowedTools 'Bash(python3:*)'：命令放行，输出 42，无拒绝记录" || no "--allowedTools 放行断言失败（rc=$rc）：$(jerr "$S/7.json")"
     # 行为：bypassPermissions 下 Bash 放行、无拒绝记录。这里只核对该模式的行为，不是派发时的选择依据：
     #   无法枚举命令不构成使用 bypassPermissions 的授权，更宽权限须有覆盖该范围的授权（见 references/claude.md）。
-    (cd "$S" && timeout "$T" claude -p --permission-mode bypassPermissions --output-format json $CM -- "$BASHP" </dev/null >"$S/7b.json" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --permission-mode bypassPermissions --output-format json -- "$BASHP" </dev/null >"$S/7b.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && py "$S/7b.json" 'd["is_error"] is False and "42" in d["result"] and d["permission_denials"] == []' \
       && ok "bypassPermissions：Bash 放行，输出 42，无拒绝记录" || no "bypassPermissions 断言失败（rc=$rc）：$(jerr "$S/7b.json")"
@@ -280,7 +295,7 @@ PY
     ACC='{"permissions":{"defaultMode":"acceptEdits"}}'
     SID4=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["session_id"])' "$S/4.json" 2>/dev/null)
     F="$S/r1.txt"
-    (cd "$S" && timeout "$T" claude -p --resume "$SID4" --settings "$ACC" --output-format json $CM -- "Use the Write tool to create $F containing hi. If the tool call is denied, reply with exactly: DENIED" </dev/null >"$S/8.json" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --resume "$SID4" --settings "$ACC" --output-format json -- "Use the Write tool to create $F containing hi. If the tool call is denied, reply with exactly: DENIED" </dev/null >"$S/8.json" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && [ -f "$F" ] && py "$S/8.json" 'd["is_error"] is False and d["permission_denials"] == []' \
       && ok "dontAsk 会话裸 --resume：写成功——权限模式不随会话恢复" || no "dontAsk 会话裸 --resume 的行为已变（rc=$rc，文件$([ -f "$F" ] && echo 已产生 || echo 未产生)）：$(jerr "$S/8.json")"
@@ -293,7 +308,7 @@ for line in open(sys.argv[1]):
     except Exception: continue
     if e.get("type")=="system" and e.get("subtype")=="init": sys.exit(0 if eval(sys.argv[2]) else 1)
 sys.exit(1)' "$1" "$2" 2>/dev/null; }
-    (cd "$S" && timeout "$T" claude -p --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --output-format stream-json --verbose $CM -- "Reply with exactly: OK" </dev/null >"$S/9.jsonl" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --output-format stream-json --verbose -- "Reply with exactly: OK" </dev/null >"$S/9.jsonl" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && init "$S/9.jsonl" 'e["permissionMode"]=="dontAsk" and sorted(e["tools"])==["Glob","Grep","Read"] and e["mcp_servers"]==[]' \
       && ok "init 事件：--tools Read,Grep,Glob --strict-mcp-config --permission-mode dontAsk → tools 恰为三个、无 MCP、dontAsk" || no "init 事件的 tools/permissionMode/mcp_servers 形状已变（rc=$rc）"
@@ -302,19 +317,20 @@ import json,sys
 for line in open(sys.argv[1]):
     e=json.loads(line)
     if e.get("type")=="system" and e.get("subtype")=="init": print(e["session_id"]); break' "$S/9.jsonl" 2>/dev/null)
-    (cd "$S" && timeout "$T" claude -p --resume "$SID9" --settings "$ACC" --output-format stream-json --verbose $CM -- "Reply with exactly: OK" </dev/null >"$S/10.jsonl" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --resume "$SID9" --settings "$ACC" --output-format stream-json --verbose -- "Reply with exactly: OK" </dev/null >"$S/10.jsonl" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && init "$S/10.jsonl" 'e["permissionMode"]=="acceptEdits" and "Write" in e["tools"]' \
       && ok "裸 --resume 的 init 事件：permissionMode 落回默认（此处钉为 acceptEdits）、Write 回到 tools——姿态不随会话恢复" || no "裸 --resume 的姿态行为已变（rc=$rc）"
-    (cd "$S" && timeout "$T" claude -p --resume "$SID9" --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --output-format stream-json --verbose $CM -- "Reply with exactly: OK" </dev/null >"$S/11.jsonl" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --resume "$SID9" --tools Read,Grep,Glob --permission-mode dontAsk --strict-mcp-config --output-format stream-json --verbose -- "Reply with exactly: OK" </dev/null >"$S/11.jsonl" 2>"$E")
     rc=$?
     [ "$rc" -eq 0 ] && init "$S/11.jsonl" 'e["permissionMode"]=="dontAsk" and "Write" not in e["tools"] and e["mcp_servers"]==[]' \
       && ok "--resume 重传三个 flag 的 init 事件：dontAsk、无 Write、无 MCP——姿态要每次续跑重传" || no "--resume 重传 flag 未生效（rc=$rc）"
-    (cd "$S" && timeout "$T" claude -p --output-format json $CM -- "$(cat "$HB")" </dev/null >"$S/12.json" 2>"$E")
+    (cd "$S" && timeout "$T" claude -p --output-format json -- "$(cat "$HB")" </dev/null >"$S/12.json" 2>"$E")
     rc=$?
     python3 -c 'import json,sys;open(sys.argv[2],"w").write(str(json.load(open(sys.argv[1])).get("result","")))' "$S/12.json" "$S/12.txt" 2>/dev/null
     [ "$rc" -eq 0 ] && intact "$S/12.txt" \
       && ok '-- "$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（.result）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$S/12.txt" 2>/dev/null)"
+    if [ -n "$ORIG_CCD_SET" ]; then export CLAUDE_CONFIG_DIR="$ORIG_CCD"; else unset CLAUDE_CONFIG_DIR; fi
 
   fi
   if selected codex; then
