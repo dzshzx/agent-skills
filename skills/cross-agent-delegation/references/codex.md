@@ -55,7 +55,8 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   source; upstream tracks the long hold as openai/codex#37450. live-check's smoke tier covers this path.
 - To continue such a thread, send the brief as a new turn through the daemon with the bundled
   script; the turn is written to that thread's history and runs under the thread's own sandbox
-  and approval settings:
+  and approval settings. The `scripts/` paths here and below resolve from this skill's directory
+  (`${CLAUDE_SKILL_DIR}` on Claude Code), not from the delegate's working directory:
 
   ```bash
   uv run --script scripts/codex_thread_turn.py "$THREAD_ID" "$BRIEF" [--wait] [--timeout 1800]

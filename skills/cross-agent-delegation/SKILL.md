@@ -168,9 +168,6 @@ own context. That file is at once the next dispatch's input and the point you re
 failure re-runs one dispatch instead of everything before it. When a dispatch should continue
 rather than start over, resume it by id.
 
-When evaluating supervision cost on an actual task, record supervisor request count, input
-size, cached input, output, repair rounds, and acceptance once at completion. Reuse available
-stage totals; do not wake models just to collect metrics. Keep CLI invocation counts separate
-from internal model requests, and report unavailable metrics as unavailable. These observations
-are improvement evidence, not a per-task reporting gate, a promised saving, or a conversion
-from tokens to subscription quota.
+If the user asks what a delegation cost, report it from totals already available, counting CLI
+invocations separately from internal model requests; mark unavailable metrics as unavailable and
+do not wake models just to collect metrics.

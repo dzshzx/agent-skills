@@ -61,5 +61,5 @@ claude -p --output-format json --permission-mode acceptEdits -- "$(cat "$BRIEF")
   overrides an unresolved denial.
 - The API's safety layer can refuse a whole turn before any work is done: `is_error: true`,
   `terminal_reason: "api_error"`, result text "safeguards flagged". A cwd whose basename is
-  `claude` trips it every time; short probe-like prompts trip it intermittently on the default
-  model. Neither is a CLI failure — rename the directory, or rephrase / `--model` another tier.
+  `claude` trips it every time; short probe-like prompts tripped it intermittently on Claude
+  Fable 5. Neither is a CLI failure — rename the directory, or rephrase / `--model` another tier.

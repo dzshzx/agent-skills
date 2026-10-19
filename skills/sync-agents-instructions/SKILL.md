@@ -1,6 +1,6 @@
 ---
 name: sync-agents-instructions
-description: Maintain shared agent rules and independent AGENTS.md / CLAUDE.md entry points using a machine topology config.
+description: Maintains shared agent rules and independent AGENTS.md / CLAUDE.md entry points using a machine topology config. Use when a rule should reach several agents or projects through their shared sources, or when converging duplicated or user-retired rules across project instruction files; not for editing one project's instructions.
 ---
 
 # Sync Agents Instructions
