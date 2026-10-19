@@ -106,15 +106,13 @@ mechanical restriction. Keep the user's choice of delegate unless they authorize
 
 ## Observe execution
 
-Keep a compact task summary, acceptance checklist, current checkpoint, and evidence index in
-the supervisor's working context. Detailed logs stay in the task artifact directory; read
-relevant excerpts when diagnosing an anomaly or checking a deliverable. Prefer the host's
-completion notifications. If polling is needed, reuse the same run identifier and read a short
-status; follow the host's user-update requirements rather than a skill-wide polling interval.
+Detailed logs stay in the task artifact directory; read relevant excerpts when diagnosing an
+anomaly or checking a deliverable. Prefer the host's completion notifications. If polling is
+needed, reuse the same run identifier and read a short status; follow the host's user-update
+requirements rather than a skill-wide polling interval.
 For a Codex thread, the progress script in [codex.md](references/codex.md) gives that status
 and can wait in the background for a question or completion.
-Update the summary on phase changes, blockers, or delivery. A quiet log alone does not show a
-stalled task and is not a reason to restart it.
+A quiet log alone does not show a stalled task and is not a reason to restart it.
 
 Intervene when the delegate reports a blocker, there is clear scope drift, an agreed checkpoint
 is reached, or an assessable result is delivered. Ordinary tasks default to acceptance after
@@ -140,9 +138,10 @@ Delivery means **awaiting acceptance**; only the supervisor's completed checks e
 ## Accept and continue
 
 Check the process exit and the CLI's failure fields first, even when the exit is zero; use the
-named reference to extract the final answer and continuation ID. Then check the task's
-acceptance criteria. Successful process exit, the delegate's completion claim, and task
-acceptance are separate judgments. When permission denials appear, identify affected steps
+named reference to extract the final answer and continuation ID. Then check what the delegate
+delivered against the brief's acceptance criteria: a successful exit or the delegate's
+completion claim does not establish acceptance on its own, but the check reads the delivered
+result rather than redoing the delegate's work. When permission denials appear, identify affected steps
 and inspect subsequent evidence: if a required step remains incomplete, mark it blocked
 regardless of successful wording.
 
