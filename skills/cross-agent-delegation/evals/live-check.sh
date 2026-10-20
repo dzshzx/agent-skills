@@ -14,7 +14,7 @@
 #     （turn.failed "flagged for possible cybersecurity risk"，codex.md 记载它不完全确定——同一 brief 可能一次过一次拒，
 #     brief 或自定义 model_instructions_file 的措辞都可能触发）时按契约重新派发，最多两次；仍拒才交给断言。
 #   --smoke 的 Claude 段整段跑在临时 CLAUDE_CONFIG_DIR 里（只复制 .credentials.json，结束即删临时凭据）：用户级 CLAUDE.md、
-#     settings（含 advisorModel）、hooks、MCP 都不进被测 run，会话记录也不进用户的配置目录；模型取 Claude Code 自身默认。
+#     settings（含 advisorModel）、hooks、MCP 都不进被测 run，会话记录也不进用户的配置目录（--resume 沿用同一目录才找得到会话）；模型取 Claude Code 自身默认。
 #     默认档不调模型，解析层的 claude 命令跑在空的临时 CLAUDE_CONFIG_DIR 里（不复制凭据），会话记录同样不进用户目录。
 #   绿灯只证明下面逐条断言的行为；没断言的东西它什么都不证明。
 set -u
@@ -67,7 +67,7 @@ cleanup() {
     uv run -q --script "$HERE/codex_daemon_thread.py" archive "$(cat "$W/daemon/id")" >/dev/null 2>&1
   fi
   rm -rf "$NOAUTH"
-  rm -f "$W/claude-config/.credentials.json" # smoke 的临时凭据；会话记录留作证据
+  rm -f "$CCD/.credentials.json" # smoke 的临时凭据；会话记录留作证据
   echo "Evidence: $W"
 }
 trap cleanup EXIT
@@ -76,8 +76,9 @@ mkdir -p "$NOAUTH"           # 空 CODEX_HOME：无凭证，启动后必 401
 BOGUS=bogus-model-live-check # 不存在的模型名：Claude 在 API 调用前失败
 NONGIT="$W/nongit"
 mkdir -p "$NONGIT"
-NOCC="$W/claude-empty" # 默认档的 claude 命令用的空 CLAUDE_CONFIG_DIR：无凭证、无用户配置，会话记录不进用户目录
+NOCC="$W/claude-empty" # 默认档 claude 命令的 CLAUDE_CONFIG_DIR
 mkdir -p "$NOCC"
+CCD="$W/claude-config" # smoke 段 claude 命令的 CLAUDE_CONFIG_DIR
 # py <file> <expr>：对 JSON 文件求值；<expr> 里用 d 表示解析结果，结果为真则退出 0
 py() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if eval(sys.argv[2]) else 1)' "$1" "$2" 2>/dev/null; }
 
@@ -239,14 +240,9 @@ PY
   }
   if selected claude; then
     echo "== smoke：Claude（真跑）"
-    # 隔离：整段在临时 CLAUDE_CONFIG_DIR 里跑（只复制凭据），用户级规则、settings、hooks、MCP 不进被测 run；
-    #   --resume 续跑沿用同一目录才找得到会话。临时凭据由 cleanup 删除。
     CRED="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
-    CCD="$W/claude-config"
     mkdir -p "$CCD"
     [ -f "$CRED" ] && cp "$CRED" "$CCD/" || no "缺少 $CRED，无法在隔离的 CLAUDE_CONFIG_DIR 里认证"
-    ORIG_CCD=${CLAUDE_CONFIG_DIR-}
-    ORIG_CCD_SET=${CLAUDE_CONFIG_DIR+1}
     export CLAUDE_CONFIG_DIR="$CCD"
     (cd "$S" && timeout "$T" claude -p --output-format json --permission-mode acceptEdits -- "Remember this word and nothing else: pineapple. Reply with exactly: noted" </dev/null >"$S/1.json" 2>"$E")
     rc=$?
@@ -332,8 +328,6 @@ for line in open(sys.argv[1]):
     python3 -c 'import json,sys;open(sys.argv[2],"w").write(str(json.load(open(sys.argv[1])).get("result","")))' "$S/12.json" "$S/12.txt" 2>/dev/null
     [ "$rc" -eq 0 ] && intact "$S/12.txt" \
       && ok '-- "$(cat "$BRIEF")"：首行以 - 开头、含反引号、$()、引号与 \n 的 brief 原样到达（.result）' || no "brief 经 argv 传递被改写或展开（rc=$rc）：$(head -c 120 "$S/12.txt" 2>/dev/null)"
-    if [ -n "$ORIG_CCD_SET" ]; then export CLAUDE_CONFIG_DIR="$ORIG_CCD"; else unset CLAUDE_CONFIG_DIR; fi
-
   fi
   if selected codex; then
     echo "== smoke：Codex（真跑）"

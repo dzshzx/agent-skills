@@ -122,15 +122,19 @@ async def run(args):
                 "the daemon does not hold this thread; use exec resume", file=sys.stderr
             )
             return 3
-        thread = (await conn.call("thread/read", {"threadId": args.thread_id}))[
-            "thread"
-        ]
+        thread = (
+            await conn.call(
+                "thread/read",
+                {"threadId": args.thread_id, "includeTurns": bool(args.steer)},
+            )
+        )["thread"]
         status = (thread.get("status") or {}).get("type")
         if status == "systemError":
             print(
                 "thread is in systemError; check it in the Codex app", file=sys.stderr
             )
             return 1
+        params = {"threadId": args.thread_id, "input": [{"type": "text", "text": text}]}
         if args.steer:
             if status != "active":
                 print(
@@ -138,59 +142,35 @@ async def run(args):
                     file=sys.stderr,
                 )
                 return 1
-            full = (
-                await conn.call(
-                    "thread/read", {"threadId": args.thread_id, "includeTurns": True}
-                )
-            )["thread"]
             running = [
-                t for t in full.get("turns", []) if t.get("status") == "inProgress"
+                t for t in thread.get("turns", []) if t.get("status") == "inProgress"
             ]
             if not running:
                 print("no in-progress turn found to steer", file=sys.stderr)
                 return 1
-            turn_id = running[-1]["id"]
-            if args.wait:
-                await conn.call(
-                    "thread/resume", {"threadId": args.thread_id, "excludeTurns": True}
-                )
-            steered = await conn.call(
-                "turn/steer",
-                {
-                    "threadId": args.thread_id,
-                    "expectedTurnId": turn_id,
-                    "input": [{"type": "text", "text": text}],
-                },
-            )
-            turn_id = steered["turnId"]
-            print(
-                json.dumps(
-                    {"thread_id": args.thread_id, "turn_id": turn_id, "steered": True}
-                ),
-                file=sys.stderr,
-            )
-            return await finish(conn, turn_id, args)
-        if status != "idle":
+            method = "turn/steer"
+            params["expectedTurnId"] = running[-1]["id"]
+        elif status != "idle":
             print(
                 f"thread status is {status}; send only to an idle thread",
                 file=sys.stderr,
             )
             return 4
+        else:
+            method = "turn/start"
         if args.wait:
-            # turn/start alone does not subscribe this connection to the thread's events.
+            # Sending a turn alone does not subscribe this connection to the thread's events.
             await conn.call(
                 "thread/resume", {"threadId": args.thread_id, "excludeTurns": True}
             )
-        started = await conn.call(
-            "turn/start",
-            {"threadId": args.thread_id, "input": [{"type": "text", "text": text}]},
-        )
-        turn_id = started["turn"]["id"]
-        print(
-            json.dumps({"thread_id": args.thread_id, "turn_id": turn_id}),
-            file=sys.stderr,
-        )
-        return await finish(conn, turn_id, args)
+        result = await conn.call(method, params)
+        ids = {"thread_id": args.thread_id}
+        if args.steer:
+            ids.update(turn_id=result["turnId"], steered=True)
+        else:
+            ids["turn_id"] = result["turn"]["id"]
+        print(json.dumps(ids), file=sys.stderr)
+        return await finish(conn, ids["turn_id"], args)
 
 
 async def finish(conn, turn_id, args):

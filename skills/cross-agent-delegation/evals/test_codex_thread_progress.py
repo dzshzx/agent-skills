@@ -182,6 +182,37 @@ class CodexThreadProgressTest(unittest.TestCase):
         after = {p: p.stat().st_mtime_ns for p in self.home.rglob("*") if p.is_file()}
         self.assertEqual(before, after)
 
+    def test_rollout_with_unparsable_first_line_is_not_a_subagent(self):
+        self.fixture()
+        broken = write(
+            self.home,
+            "00000000-0000-7000-8000-00000000000e",
+            "10-03-00",
+            [event("10:03:01.000", "task_started", turn_id="x")],
+        )
+        broken.write_text('{"timestamp": "2026-01-02T10:03\n' + broken.read_text())
+        result = run(ROOT, home=self.home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("== subagents (2)", result.stdout)
+
+    def test_review_subagent_with_string_source_is_not_a_child(self):
+        self.fixture()
+        write(
+            self.home,
+            "00000000-0000-7000-8000-00000000000f",
+            "10-03-00",
+            [
+                rec(
+                    "10:03:00.000",
+                    "session_meta",
+                    {"id": "review-1", "source": {"subagent": "review"}},
+                )
+            ],
+        )
+        result = run(ROOT, home=self.home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("== subagents (2)", result.stdout)
+
     def test_since_filters_messages(self):
         self.fixture()
         result = run(ROOT, "--since", "2026-01-02T10:04:30Z", home=self.home)
@@ -205,9 +236,7 @@ class CodexThreadProgressTest(unittest.TestCase):
         self.assertIn("no rollout for thread", result.stderr)
 
     def test_wait_complete_exits_zero_on_completion_after_start(self):
-        records = [
-            r for r in base_root() if r.get("payload") != base_root()[-1]["payload"]
-        ]
+        records = base_root()[:-1]
         root = self.fixture(records, torn=False)
 
         def finish():
@@ -255,9 +284,7 @@ class CodexThreadProgressTest(unittest.TestCase):
         self.assertIn("== unanswered questions (1)", result.stdout)
 
     def test_wait_question_exits_three_when_one_arrives(self):
-        records = [
-            r for r in base_root() if r.get("payload") != base_root()[-1]["payload"]
-        ]
+        records = base_root()[:-1]
         root = self.fixture(records, torn=False)
 
         def asks():
@@ -284,21 +311,111 @@ class CodexThreadProgressTest(unittest.TestCase):
     def idle_root(self):
         return self.fixture(base_root()[:3] + [event("10:10:00.000", "task_complete")])
 
-    def test_wait_complete_since_before_completion_exits_zero_at_once(self):
-        self.idle_root()
-        result = run(
-            ROOT,
-            "--wait",
-            "complete",
-            "--since",
-            "2026-01-02T10:05:00Z",
-            "--interval",
-            "0.3",
-            "--timeout",
-            "30",
-            home=self.home,
+    def wait(self, *args, timeout="30"):
+        return run(
+            ROOT, *args, "--interval", "0.2", "--timeout", timeout, home=self.home
         )
+
+    def turns_root(self, *records):
+        return self.fixture([meta(ROOT), *records], torn=False)
+
+    def test_running_follows_turn_ids_not_timestamps(self):
+        # Turn b's task_complete carries an earlier timestamp than its task_started.
+        self.turns_root(
+            event("10:00:01.000", "task_started", turn_id="a"),
+            event("10:01:00.000", "task_complete", turn_id="a"),
+            event("10:05:00.000", "task_started", turn_id="b"),
+            event("10:04:59.000", "task_complete", turn_id="b"),
+        )
+        result = run(ROOT, home=self.home)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("turn in progress: no", result.stdout)
+        self.assertIn("latest turn b", result.stdout)
+
+    def test_aborted_turn_is_not_running(self):
+        self.turns_root(
+            event("10:00:01.000", "task_started", turn_id="a"),
+            event("10:01:00.000", "turn_aborted", turn_id="a", reason="interrupted"),
+        )
+        result = run(ROOT, home=self.home)
+        self.assertIn("turn in progress: no", result.stdout)
+        self.assertIn("aborted (interrupted)", result.stdout)
+
+    def test_wait_complete_returns_when_open_turn_completes_with_old_timestamp(self):
+        root = self.turns_root(event("10:00:01.000", "task_started", turn_id="a"))
+
+        def finish():
+            time.sleep(1.5)
+            with root.open("a") as fh:
+                done = event("10:30:00.000", "task_complete", turn_id="a")
+                fh.write(json.dumps(done) + "\n")
+
+        threading.Thread(target=finish).start()
+        result = self.wait("--wait", "complete")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("turn in progress: no", result.stdout)
+
+    def test_wait_complete_ignores_turns_finished_before_start(self):
+        self.turns_root(
+            event("10:00:01.000", "task_started", turn_id="a"),
+            event("10:01:00.000", "task_complete", turn_id="a"),
+        )
+        result = self.wait("--wait", "complete", "--since", "all", timeout="1")
+        self.assertEqual(result.returncode, 124)
+
+    def test_wait_complete_returns_for_new_turn_after_start(self):
+        root = self.turns_root(
+            event("10:00:01.000", "task_started", turn_id="a"),
+            event("10:01:00.000", "task_complete", turn_id="a"),
+        )
+
+        def more():
+            time.sleep(1.5)
+            with root.open("a") as fh:
+                for r in (
+                    event("10:02:00.000", "task_started", turn_id="b"),
+                    event("10:03:00.000", "task_complete", turn_id="b"),
+                ):
+                    fh.write(json.dumps(r) + "\n")
+
+        threading.Thread(target=more).start()
+        result = self.wait("--wait", "complete")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("latest turn b", result.stdout)
+
+    def test_turn_already_complete_exits_zero_at_once(self):
+        self.turns_root(
+            event("10:00:01.000", "task_started", turn_id="a"),
+            event("10:01:00.000", "task_complete", turn_id="a"),
+            event("10:02:00.000", "task_started", turn_id="b"),
+        )
+        result = self.wait("--turn", "a")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_turn_waits_for_that_turn_to_appear_and_finish(self):
+        root = self.turns_root(
+            event("10:00:01.000", "task_started", turn_id="a"),
+            event("10:01:00.000", "task_complete", turn_id="a"),
+        )
+        self.assertEqual(self.wait("--turn", "b", timeout="1").returncode, 124)
+
+        def more():
+            time.sleep(1.5)
+            with root.open("a") as fh:
+                for r in (
+                    event("10:02:00.000", "task_started", turn_id="b"),
+                    event("10:03:00.000", "task_complete", turn_id="b"),
+                ):
+                    fh.write(json.dumps(r) + "\n")
+
+        threading.Thread(target=more).start()
+        result = self.wait("--turn", "b")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_turn_rejects_wait_question(self):
+        self.turns_root()
+        result = run(ROOT, "--turn", "a", "--wait", "question", home=self.home)
+        self.assertEqual(result.returncode, 2)
 
     def test_wait_complete_idle_without_since_times_out(self):
         self.idle_root()

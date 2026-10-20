@@ -64,7 +64,7 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
 
   Without `--wait` it returns once the daemon accepts the turn (exit 0, ids on stderr) and the
   turn keeps running; read its progress and answer from the thread's rollout
-  (`$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl`, finished at `task_complete`). With `--wait` it
+  (`$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl`, finished at `task_complete` or `turn_aborted`). With `--wait` it
   stays subscribed and prints the final answer. Exit 3 means there is no daemon or it does not hold the thread —
   use `exec resume`; 4 means a turn is already running; 5 means the turn sent a request the script cannot answer, such as an approval, so the user answers it in the app; 124 is a `--wait` timeout with the
   turn still running. The daemon speaks experimental JSON-RPC over WebSocket on
@@ -85,9 +85,10 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   spawned subagents, and whether the root turn is still running. Run it with
   `--wait question|complete|any` as a host background job so its exit fires the notification:
   3 a question awaits the user (checked against the current state, so a pending one returns
-  at once), 0 the root turn completed after `--since` or, without it, after the script started,
-  124 timeout. Read-only; `--help`
-  has the options.
+  at once), 0 the root thread's latest turn ended and had not already ended when the script
+  started, 124 timeout. Turns are matched by `turn_id`, not by time; `--turn <turn_id>` (the id
+  `codex_thread_turn.py` prints) waits for that turn instead and returns at once if it already
+  ended. `--since` only filters the messages shown. Read-only; `--help` has the options.
 
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
   `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes _before_

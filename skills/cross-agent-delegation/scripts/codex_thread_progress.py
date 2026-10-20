@@ -8,20 +8,26 @@
 Prints, for records after --since: assistant progress messages, questions the thread asked the user
 (request_user_input_async) and the user's replies, other user messages; then a subagent table,
 whether the root thread has a turn in progress, and the questions still unanswered.
---since takes an ISO time, a local HH:MM (today, or yesterday if that is still ahead), or "all";
-by default it is one hour before the root thread's last record. The tables always cover the whole
-thread.
+--since only filters those messages; it takes an ISO time, a local HH:MM (today, or yesterday if
+that is still ahead), or "all"; by default it is one hour before the root thread's last record.
+The tables always cover the whole thread.
 
---wait polls the rollouts every --interval seconds and returns, after printing the same report,
+Turns are tracked by the turn_id on task_started / task_complete / turn_aborted; a turn is in
+progress from its task_started until one of the other two, and the thread is running while its
+latest turn is (an earlier turn left open, say by a crash, does not count). Records without a
+turn_id (older rollouts) count as one turn per task_started; an id-less end closes the latest
+open turn.
+
+--wait polls the root rollout every --interval seconds and returns, after printing the report,
 as soon as the awaited state holds (checked at start too): "question" = the root thread has an
-unanswered question; "complete" = the root thread's last task_complete is later than its last
-task_started and than the baseline, which is --since when given (so "--since <when I sent the
-turn>" returns at once if it already finished) and the script's start time otherwise; "any" =
-either.
+unanswered question; "complete" = the root thread's latest turn has ended and had not already
+ended when the script started (a turn running at start, or one started after it); "any" =
+either. --turn <id> (the turn_id codex_thread_turn.py prints) waits for that turn to end instead,
+returning at once if it already has; it implies --wait complete and also works with --wait any.
 
-Exit codes: 0 report printed (with --wait: the root turn completed); 1 error, such as no rollout
-for the thread; 2 usage error; 3 --wait question/any: a question awaits the user's answer;
-124 --wait timed out. Never writes under $CODEX_HOME.
+Exit codes: 0 report printed (with --wait: the awaited turn ended, completed or aborted); 1 error,
+such as no rollout for the thread; 2 usage error; 3 --wait question/any: a question awaits the
+user's answer; 124 --wait timed out. Never writes under $CODEX_HOME.
 """
 
 import argparse
@@ -71,11 +77,7 @@ def read_records(path):
 
 
 def first_record(path):
-    try:
-        with path.open(encoding="utf-8", errors="replace") as fh:
-            return json.loads(fh.readline())
-    except (OSError, ValueError):
-        return None
+    return next(read_records(path), None)
 
 
 def texts(content):
@@ -91,12 +93,18 @@ def texts(content):
 
 
 @dataclass
+class Turn:
+    started: datetime | None
+    ended: datetime | None = None
+    end: str | None = None  # "complete" or "aborted (<reason>)"
+
+
+@dataclass
 class Thread:
     path: Path
     started: datetime | None = None
     last: datetime | None = None
-    last_started: datetime | None = None
-    last_complete: datetime | None = None
+    turns: dict = field(default_factory=dict)  # turn id -> Turn, in start order
     events: list = field(default_factory=list)  # (ts, kind, text)
     questions: dict = field(default_factory=dict)  # call_id -> (ts, [question dict])
     answered: set = field(default_factory=set)  # call ids
@@ -104,10 +112,34 @@ class Thread:
     seen_replies: set = field(default_factory=set)
 
     @property
+    def latest(self):
+        """(turn id, Turn) of the last task_started, or (None, None)."""
+        return next(reversed(self.turns.items()), (None, None))
+
+    @property
     def running(self):
-        return self.last_started is not None and (
-            self.last_complete is None or self.last_started > self.last_complete
-        )
+        return self.latest[1] is not None and self.latest[1].end is None
+
+    def start_turn(self, turn_id, ts):
+        if not isinstance(turn_id, str):
+            turn_id = f"#{len(self.turns) + 1}"  # no turn_id: older rollout
+        self.turns.setdefault(turn_id, Turn(ts))
+
+    def end_turn(self, turn_id, ts, end):
+        if not isinstance(turn_id, str):
+            open_ids = [k for k, t in self.turns.items() if t.end is None]
+            turn_id = open_ids[-1] if open_ids else None
+        turn = self.turns.get(turn_id)
+        if turn is not None and turn.end is None:
+            turn.ended, turn.end = ts, end
+
+    def turn_state(self, turn_id=None):
+        turn_id, turn = (turn_id, self.turns.get(turn_id)) if turn_id else self.latest
+        if turn is None:
+            return "no turn recorded"
+        if turn.end is None:
+            return f"turn {turn_id} running since {local(turn.started)}"
+        return f"turn {turn_id} {turn.end} {local(turn.ended)}"
 
     def unanswered(self):
         out = {}
@@ -166,9 +198,12 @@ def parse_thread(path):
             continue
         kind, ptype = record.get("type"), payload.get("type")
         if kind == "event_msg" and ptype == "task_started":
-            thread.last_started = ts
+            thread.start_turn(payload.get("turn_id"), ts)
         elif kind == "event_msg" and ptype == "task_complete":
-            thread.last_complete = ts
+            thread.end_turn(payload.get("turn_id"), ts, "complete")
+        elif kind == "event_msg" and ptype == "turn_aborted":
+            reason = payload.get("reason") or "unknown"
+            thread.end_turn(payload.get("turn_id"), ts, f"aborted ({reason})")
         elif kind == "event_msg" and ptype == "user_message":
             text = payload.get("message")
             if isinstance(text, str) and text not in seen_user:
@@ -238,10 +273,10 @@ def locate(home, thread_id):
         if not isinstance(payload, dict) or meta.get("type") != "session_meta":
             continue
         source = payload.get("source")
+        # Review subagents record `subagent` as a bare string such as "review".
+        subagent = source.get("subagent") if isinstance(source, dict) else None
         spawn = (
-            ((source.get("subagent") or {}).get("thread_spawn") or {})
-            if isinstance(source, dict)
-            else {}
+            (subagent.get("thread_spawn") or {}) if isinstance(subagent, dict) else {}
         )
         if isinstance(spawn, dict) and spawn.get("parent_thread_id") in known:
             known.add(payload.get("id"))
@@ -285,10 +320,9 @@ def status_file_report(path):
     return lines
 
 
-def report(thread_id, root_path, children, since, status_file):
-    root = parse_thread(root_path)
+def report(thread_id, root, children, since, status_file, turn_id=None):
     kids = [(name, parse_thread(path)) for name, path in children]
-    out = [f"== thread {thread_id}  ({root_path})"]
+    out = [f"== thread {thread_id}  ({root.path})"]
     window = f"since {local(since)}" if since else "all records"
     out.append(f"== messages, {window}")
     for ts, kind, text in root.events:
@@ -298,21 +332,17 @@ def report(thread_id, root_path, children, since, status_file):
         out.append(f"[{local(ts)}] {kind}: {body}")
     out.append(f"== subagents ({len(kids)})")
     for name, kid in kids:
-        if kid.running:
-            state = f"running since {local(kid.last_started)}"
-        elif kid.last_complete:
-            state = f"task_complete {local(kid.last_complete)}"
-        else:
-            state = "no turn recorded"
         out.append(
-            f"  {name}\tstarted {local(kid.started)}\tlast {local(kid.last)}\t{state}"
+            f"  {name}\tstarted {local(kid.started)}\tlast {local(kid.last)}"
+            f"\t{kid.turn_state()}"
         )
     out.append("== root")
     out.append(
         f"  turn in progress: {'yes' if root.running else 'no'}"
-        f"  (last task_started {local(root.last_started)},"
-        f" last task_complete {local(root.last_complete)})"
+        f"  (latest {root.turn_state()})"
     )
+    if turn_id and turn_id != root.latest[0]:
+        out.append(f"  awaited: {root.turn_state(turn_id)}")
     out.append(f"  last record: {local(root.last)}")
     pending = root.unanswered()
     out.append(f"== unanswered questions ({len(pending)})")
@@ -321,7 +351,7 @@ def report(thread_id, root_path, children, since, status_file):
             out.append(f"  [{local(ts)}] {q.get('title')}")
     if status_file:
         out += status_file_report(status_file)
-    return root, "\n".join(out)
+    return "\n".join(out)
 
 
 def main():
@@ -335,6 +365,9 @@ def main():
     )
     parser.add_argument("--wait", choices=["question", "complete", "any"])
     parser.add_argument(
+        "--turn", help="wait for this turn id to end (implies --wait complete)"
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=3600,
@@ -344,6 +377,10 @@ def main():
         "--interval", type=float, default=30, help="--wait poll seconds (default 30)"
     )
     args = parser.parse_args()
+    if args.turn:
+        if args.wait == "question":
+            parser.error("--turn needs --wait complete or any")
+        args.wait = args.wait or "complete"
 
     home = codex_home()
     root_path, children = locate(home, args.thread_id)
@@ -359,39 +396,49 @@ def main():
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 2
+
     if not args.wait:
-        print(report(args.thread_id, root_path, children, since, args.status_file)[1])
+        print(report(args.thread_id, root, children, since, args.status_file))
         return 0
 
-    if args.since is None:
-        baseline = datetime.now().astimezone()
-    else:
-        baseline = since
+    ended_at_start = {k for k, t in root.turns.items() if t.end is not None}
+
+    def turn_ended(thread):
+        if args.turn:
+            turn = thread.turns.get(args.turn)
+            return turn is not None and turn.end is not None
+        turn_id, turn = thread.latest
+        return (
+            turn is not None and turn.end is not None and turn_id not in ended_at_start
+        )
+
     deadline = time.monotonic() + args.timeout
     while True:
-        found, kids = locate(home, args.thread_id)
-        if found is not None:
-            root_path, children = found, kids
-        root, text = report(
-            args.thread_id, root_path, children, since, args.status_file
-        )
         if args.wait in ("question", "any") and root.unanswered():
-            print(text)
-            return 3
-        completed = root.last_complete and (
-            baseline is None or root.last_complete > baseline
+            code = 3
+        elif args.wait in ("complete", "any") and turn_ended(root):
+            code = 0
+        elif time.monotonic() >= deadline:
+            code = 124
+        else:
+            time.sleep(min(args.interval, max(0.0, deadline - time.monotonic())))
+            root = parse_thread(root_path)
+            continue
+        break
+    found, kids = locate(home, args.thread_id)
+    print(
+        report(
+            args.thread_id,
+            root,
+            kids if found is not None else children,
+            since,
+            args.status_file,
+            args.turn,
         )
-        if args.wait in ("complete", "any") and completed and not root.running:
-            print(text)
-            return 0
-        if time.monotonic() >= deadline:
-            print(text)
-            print(
-                f"--wait {args.wait}: timed out after {args.timeout:g}s",
-                file=sys.stderr,
-            )
-            return 124
-        time.sleep(min(args.interval, max(0.0, deadline - time.monotonic())))
+    )
+    if code == 124:
+        print(f"--wait {args.wait}: timed out after {args.timeout:g}s", file=sys.stderr)
+    return code
 
 
 if __name__ == "__main__":
