@@ -1,6 +1,6 @@
 """Offline checks for codex_thread_progress.py against synthetic rollouts."""
 
-from datetime import datetime, timezone
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -11,6 +11,9 @@ import time
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "codex_thread_progress.py"
+_spec = importlib.util.spec_from_file_location("codex_thread_progress", SCRIPT)
+progress = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(progress)
 ROOT = "00000000-0000-7000-8000-00000000000a"
 CHILD = "00000000-0000-7000-8000-00000000000b"
 GRANDCHILD = "00000000-0000-7000-8000-00000000000c"
@@ -97,6 +100,18 @@ def write(home, thread_id, stamp, records, torn=False):
         text += '{"timestamp": "2026-01-02T11:59'
     path.write_text(text)
     return path
+
+
+def append_later(path, *records, delay=1.5):
+    """Append records (dicts as JSON lines, strings verbatim) from a thread after delay."""
+
+    def append():
+        time.sleep(delay)
+        with path.open("a") as fh:
+            for r in records:
+                fh.write(r if isinstance(r, str) else json.dumps(r) + "\n")
+
+    threading.Thread(target=append).start()
 
 
 def run(*args, home, timeout=60):
@@ -238,78 +253,26 @@ class CodexThreadProgressTest(unittest.TestCase):
     def test_wait_complete_exits_zero_on_completion_after_start(self):
         records = base_root()[:-1]
         root = self.fixture(records, torn=False)
-
-        def finish():
-            time.sleep(1.5)
-            now = datetime.now(timezone.utc).isoformat()
-            with root.open("a") as fh:
-                fh.write(
-                    json.dumps(
-                        {
-                            "timestamp": now,
-                            "type": "event_msg",
-                            "payload": {"type": "task_complete"},
-                        }
-                    )
-                    + "\n"
-                )
-
-        threading.Thread(target=finish).start()
-        result = run(
-            ROOT,
-            "--wait",
-            "complete",
-            "--interval",
-            "0.3",
-            "--timeout",
-            "30",
-            home=self.home,
-        )
+        append_later(root, event("11:00:00.000", "task_complete"))
+        result = self.wait("--wait", "complete")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("turn in progress: no", result.stdout)
 
     def test_wait_question_with_pending_question_exits_three_at_once(self):
         self.fixture()
-        result = run(
-            ROOT,
-            "--wait",
-            "any",
-            "--interval",
-            "0.3",
-            "--timeout",
-            "30",
-            home=self.home,
-        )
+        result = self.wait("--wait", "any")
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertIn("== unanswered questions (1)", result.stdout)
 
     def test_wait_question_exits_three_when_one_arrives(self):
         records = base_root()[:-1]
         root = self.fixture(records, torn=False)
-
-        def asks():
-            time.sleep(1.5)
-            with root.open("a") as fh:
-                fh.write(json.dumps(ask("11:00:00.000", "call_3", "Rollback?")) + "\n")
-
-        threading.Thread(target=asks).start()
-        result = run(
-            ROOT,
-            "--wait",
-            "question",
-            "--interval",
-            "0.3",
-            "--timeout",
-            "30",
-            home=self.home,
-        )
+        append_later(root, ask("11:00:00.000", "call_3", "Rollback?"))
+        result = self.wait("--wait", "question")
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertIn(
             "Rollback?", result.stdout.split("== unanswered questions (1)")[1]
         )
-
-    def idle_root(self):
-        return self.fixture(base_root()[:3] + [event("10:10:00.000", "task_complete")])
 
     def wait(self, *args, timeout="30"):
         return run(
@@ -343,14 +306,7 @@ class CodexThreadProgressTest(unittest.TestCase):
 
     def test_wait_complete_returns_when_open_turn_completes_with_old_timestamp(self):
         root = self.turns_root(event("10:00:01.000", "task_started", turn_id="a"))
-
-        def finish():
-            time.sleep(1.5)
-            with root.open("a") as fh:
-                done = event("10:30:00.000", "task_complete", turn_id="a")
-                fh.write(json.dumps(done) + "\n")
-
-        threading.Thread(target=finish).start()
+        append_later(root, event("10:30:00.000", "task_complete", turn_id="a"))
         result = self.wait("--wait", "complete")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("turn in progress: no", result.stdout)
@@ -368,17 +324,11 @@ class CodexThreadProgressTest(unittest.TestCase):
             event("10:00:01.000", "task_started", turn_id="a"),
             event("10:01:00.000", "task_complete", turn_id="a"),
         )
-
-        def more():
-            time.sleep(1.5)
-            with root.open("a") as fh:
-                for r in (
-                    event("10:02:00.000", "task_started", turn_id="b"),
-                    event("10:03:00.000", "task_complete", turn_id="b"),
-                ):
-                    fh.write(json.dumps(r) + "\n")
-
-        threading.Thread(target=more).start()
+        append_later(
+            root,
+            event("10:02:00.000", "task_started", turn_id="b"),
+            event("10:03:00.000", "task_complete", turn_id="b"),
+        )
         result = self.wait("--wait", "complete")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("latest turn b", result.stdout)
@@ -398,17 +348,11 @@ class CodexThreadProgressTest(unittest.TestCase):
             event("10:01:00.000", "task_complete", turn_id="a"),
         )
         self.assertEqual(self.wait("--turn", "b", timeout="1").returncode, 124)
-
-        def more():
-            time.sleep(1.5)
-            with root.open("a") as fh:
-                for r in (
-                    event("10:02:00.000", "task_started", turn_id="b"),
-                    event("10:03:00.000", "task_complete", turn_id="b"),
-                ):
-                    fh.write(json.dumps(r) + "\n")
-
-        threading.Thread(target=more).start()
+        append_later(
+            root,
+            event("10:02:00.000", "task_started", turn_id="b"),
+            event("10:03:00.000", "task_complete", turn_id="b"),
+        )
         result = self.wait("--turn", "b")
         self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -417,20 +361,38 @@ class CodexThreadProgressTest(unittest.TestCase):
         result = run(ROOT, "--turn", "a", "--wait", "question", home=self.home)
         self.assertEqual(result.returncode, 2)
 
-    def test_wait_complete_idle_without_since_times_out(self):
-        self.idle_root()
-        result = run(
-            ROOT,
-            "--wait",
-            "complete",
-            "--interval",
-            "0.2",
-            "--timeout",
-            "1",
-            home=self.home,
-        )
+    def test_wait_complete_ignores_idless_turn_finished_before_start(self):
+        self.fixture(base_root()[:3] + [event("10:10:00.000", "task_complete")])
+        result = self.wait("--wait", "complete", timeout="1")
         self.assertEqual(result.returncode, 124)
         self.assertIn("timed out", result.stderr)
+
+    def test_wait_reads_a_line_finished_in_a_later_poll(self):
+        root = self.turns_root(event("10:00:01.000", "task_started", turn_id="a"))
+        line = json.dumps(event("10:30:00.000", "task_complete", turn_id="a")) + "\n"
+        with root.open("a") as fh:
+            fh.write(line[:20])
+        append_later(root, line[20:])
+        result = self.wait("--wait", "complete")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("turn a complete", result.stdout)
+
+    def test_read_new_applies_only_appended_complete_lines(self):
+        root = self.turns_root(say("10:00:02.000", "first"))
+        thread = progress.parse_thread(root, eof=False)
+        self.assertEqual(thread.offset, root.stat().st_size)
+        complete = json.dumps(say("10:00:03.000", "second")) + "\n"
+        half = json.dumps(event("10:00:04.000", "task_started", turn_id="b"))
+        with root.open("a") as fh:
+            fh.write(complete + half[:20])
+        progress.read_new(thread)
+        self.assertEqual([e[2] for e in thread.events], ["first", "second"])
+        self.assertNotIn("b", thread.turns)
+        with root.open("a") as fh:
+            fh.write(half[20:] + "\n")
+        progress.read_new(thread)
+        self.assertIn("b", thread.turns)
+        self.assertEqual(thread.offset, root.stat().st_size)
 
 
 if __name__ == "__main__":

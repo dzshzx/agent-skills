@@ -84,11 +84,9 @@ codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o
   hand-written `jq`: one report of assistant messages, questions to the user and their answers,
   spawned subagents, and whether the root turn is still running. Run it with
   `--wait question|complete|any` as a host background job so its exit fires the notification:
-  3 a question awaits the user (checked against the current state, so a pending one returns
-  at once), 0 the root thread's latest turn ended and had not already ended when the script
-  started, 124 timeout. Turns are matched by `turn_id`, not by time; `--turn <turn_id>` (the id
-  `codex_thread_turn.py` prints) waits for that turn instead and returns at once if it already
-  ended. `--since` only filters the messages shown. Read-only; `--help` has the options.
+  3 a question awaits the user, 0 the awaited turn ended, 124 timeout. `--turn <turn_id>` (the
+  id `codex_thread_turn.py` prints) waits for that turn. Read-only; `--help` has the exact rules
+  and the other options.
 
 - Review has two entry points. `codex review …` prints prose for a human and has no `--json` or
   `-o`; `codex exec … review` takes them. `--sandbox` is an `exec` option and goes _before_

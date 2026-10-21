@@ -76,10 +76,6 @@ def read_records(path):
         return
 
 
-def first_record(path):
-    return next(read_records(path), None)
-
-
 def texts(content):
     if isinstance(content, str):
         return [content]
@@ -98,6 +94,10 @@ class Turn:
     ended: datetime | None = None
     end: str | None = None  # "complete" or "aborted (<reason>)"
 
+    @property
+    def done(self):
+        return self.end is not None
+
 
 @dataclass
 class Thread:
@@ -110,6 +110,8 @@ class Thread:
     answered: set = field(default_factory=set)  # call ids
     answered_titles: set = field(default_factory=set)
     seen_replies: set = field(default_factory=set)
+    seen_user: set = field(default_factory=set)
+    offset: int = 0  # bytes of path already read, complete lines only
 
     @property
     def latest(self):
@@ -118,7 +120,7 @@ class Thread:
 
     @property
     def running(self):
-        return self.latest[1] is not None and self.latest[1].end is None
+        return self.latest[1] is not None and not self.latest[1].done
 
     def start_turn(self, turn_id, ts):
         if not isinstance(turn_id, str):
@@ -127,17 +129,17 @@ class Thread:
 
     def end_turn(self, turn_id, ts, end):
         if not isinstance(turn_id, str):
-            open_ids = [k for k, t in self.turns.items() if t.end is None]
+            open_ids = [k for k, t in self.turns.items() if not t.done]
             turn_id = open_ids[-1] if open_ids else None
         turn = self.turns.get(turn_id)
-        if turn is not None and turn.end is None:
+        if turn is not None and not turn.done:
             turn.ended, turn.end = ts, end
 
     def turn_state(self, turn_id=None):
         turn_id, turn = (turn_id, self.turns.get(turn_id)) if turn_id else self.latest
         if turn is None:
             return "no turn recorded"
-        if turn.end is None:
+        if not turn.done:
             return f"turn {turn_id} running since {local(turn.started)}"
         return f"turn {turn_id} {turn.end} {local(turn.ended)}"
 
@@ -185,67 +187,92 @@ def add_replies(thread, ts, text):
     return found
 
 
-def parse_thread(path):
+def apply_record(thread, record):
+    ts = parse_ts(record.get("timestamp"))
+    payload = record.get("payload")
+    if ts:
+        thread.started = thread.started or ts
+        thread.last = ts
+    if not isinstance(payload, dict):
+        return
+    kind, ptype = record.get("type"), payload.get("type")
+    if kind == "event_msg" and ptype == "task_started":
+        thread.start_turn(payload.get("turn_id"), ts)
+    elif kind == "event_msg" and ptype == "task_complete":
+        thread.end_turn(payload.get("turn_id"), ts, "complete")
+    elif kind == "event_msg" and ptype == "turn_aborted":
+        reason = payload.get("reason") or "unknown"
+        thread.end_turn(payload.get("turn_id"), ts, f"aborted ({reason})")
+    elif kind == "event_msg" and ptype == "user_message":
+        text = payload.get("message")
+        if isinstance(text, str) and text not in thread.seen_user:
+            if not add_replies(thread, ts, text):
+                thread.seen_user.add(text)
+                thread.events.append((ts, "user", text))
+    elif kind == "event_msg" and ptype == "item_completed":
+        item = payload.get("item") or {}
+        if isinstance(item, dict) and item.get("type") == "UserMessage":
+            text = "\n".join(texts(item.get("content")))
+            if text and text not in thread.seen_user and not REPLY.search(text):
+                thread.seen_user.add(text)
+                thread.events.append((ts, "user", text))
+    elif kind == "response_item" and ptype == "message":
+        role = payload.get("role")
+        text = "\n".join(texts(payload.get("content")))
+        if role == "assistant" and text:
+            phase = payload.get("phase") or "message"
+            thread.events.append((ts, f"assistant/{phase}", text))
+        elif role == "user" and text:
+            add_replies(thread, ts, text)
+    elif (
+        kind == "response_item"
+        and ptype == "function_call"
+        and payload.get("name") == "request_user_input_async"
+    ):
+        try:
+            args = json.loads(payload.get("arguments") or "{}")
+        except ValueError:
+            args = {}
+        qs = args.get("questions") if isinstance(args, dict) else None
+        qs = [q for q in qs if isinstance(q, dict)] if isinstance(qs, list) else []
+        thread.questions[payload.get("call_id")] = (ts, qs)
+        lines = []
+        for q in qs:
+            opts = q.get("options") or []
+            lines.append(f"Q: {q.get('title')}")
+            lines += [
+                f"   - {o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)}"
+                for o in opts
+            ]
+        thread.events.append((ts, "question", "\n".join(lines)))
+
+
+def read_new(thread, eof=False):
+    """Apply the records appended to thread.path since the last call.
+
+    A last line without its newline may still be being written: it is left for the next call
+    unless eof, which takes it as it stands (a torn line then fails to parse and is skipped).
+    """
+    try:
+        with thread.path.open("rb") as fh:
+            fh.seek(thread.offset)
+            for line in fh:
+                if not eof and not line.endswith(b"\n"):
+                    break
+                thread.offset += len(line)
+                try:
+                    record = json.loads(line.decode("utf-8", errors="replace"))
+                except ValueError:
+                    continue
+                if isinstance(record, dict):
+                    apply_record(thread, record)
+    except OSError:
+        return
+
+
+def parse_thread(path, eof=True):
     thread = Thread(path)
-    seen_user = set()
-    for record in read_records(path):
-        ts = parse_ts(record.get("timestamp"))
-        payload = record.get("payload")
-        if ts:
-            thread.started = thread.started or ts
-            thread.last = ts
-        if not isinstance(payload, dict):
-            continue
-        kind, ptype = record.get("type"), payload.get("type")
-        if kind == "event_msg" and ptype == "task_started":
-            thread.start_turn(payload.get("turn_id"), ts)
-        elif kind == "event_msg" and ptype == "task_complete":
-            thread.end_turn(payload.get("turn_id"), ts, "complete")
-        elif kind == "event_msg" and ptype == "turn_aborted":
-            reason = payload.get("reason") or "unknown"
-            thread.end_turn(payload.get("turn_id"), ts, f"aborted ({reason})")
-        elif kind == "event_msg" and ptype == "user_message":
-            text = payload.get("message")
-            if isinstance(text, str) and text not in seen_user:
-                if not add_replies(thread, ts, text):
-                    seen_user.add(text)
-                    thread.events.append((ts, "user", text))
-        elif kind == "event_msg" and ptype == "item_completed":
-            item = payload.get("item") or {}
-            if isinstance(item, dict) and item.get("type") == "UserMessage":
-                text = "\n".join(texts(item.get("content")))
-                if text and text not in seen_user and not REPLY.search(text):
-                    seen_user.add(text)
-                    thread.events.append((ts, "user", text))
-        elif kind == "response_item" and ptype == "message":
-            role = payload.get("role")
-            text = "\n".join(texts(payload.get("content")))
-            if role == "assistant" and text:
-                phase = payload.get("phase") or "message"
-                thread.events.append((ts, f"assistant/{phase}", text))
-            elif role == "user" and text:
-                add_replies(thread, ts, text)
-        elif (
-            kind == "response_item"
-            and ptype == "function_call"
-            and payload.get("name") == "request_user_input_async"
-        ):
-            try:
-                args = json.loads(payload.get("arguments") or "{}")
-            except ValueError:
-                args = {}
-            qs = args.get("questions") if isinstance(args, dict) else None
-            qs = [q for q in qs if isinstance(q, dict)] if isinstance(qs, list) else []
-            thread.questions[payload.get("call_id")] = (ts, qs)
-            lines = []
-            for q in qs:
-                opts = q.get("options") or []
-                lines.append(f"Q: {q.get('title')}")
-                lines += [
-                    f"   - {o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)}"
-                    for o in opts
-                ]
-            thread.events.append((ts, "question", "\n".join(lines)))
+    read_new(thread, eof)
     return thread
 
 
@@ -268,8 +295,8 @@ def locate(home, thread_id):
         m = ROLLOUT_STAMP.search(path.name)
         if m and m[1] < stamp:
             continue
-        meta = first_record(path)
-        payload = meta.get("payload") if isinstance(meta, dict) else None
+        meta = next(read_records(path), {})
+        payload = meta.get("payload")
         if not isinstance(payload, dict) or meta.get("type") != "session_meta":
             continue
         source = payload.get("source")
@@ -390,7 +417,9 @@ def main():
             file=sys.stderr,
         )
         return 1
-    root = parse_thread(root_path)
+    # --wait keeps root and reads only what the rollout gains, so a line still being
+    # written is left for the next poll.
+    root = parse_thread(root_path, eof=not args.wait)
     try:
         since = parse_since(args.since, root)
     except ValueError as exc:
@@ -401,16 +430,16 @@ def main():
         print(report(args.thread_id, root, children, since, args.status_file))
         return 0
 
-    ended_at_start = {k for k, t in root.turns.items() if t.end is not None}
+    # --turn counts a turn that had already ended; otherwise the latest turn must end after start.
+    ended_at_start = (
+        set() if args.turn else {k for k, t in root.turns.items() if t.done}
+    )
 
     def turn_ended(thread):
-        if args.turn:
-            turn = thread.turns.get(args.turn)
-            return turn is not None and turn.end is not None
-        turn_id, turn = thread.latest
-        return (
-            turn is not None and turn.end is not None and turn_id not in ended_at_start
+        turn_id, turn = (
+            (args.turn, thread.turns.get(args.turn)) if args.turn else thread.latest
         )
+        return turn is not None and turn.done and turn_id not in ended_at_start
 
     deadline = time.monotonic() + args.timeout
     while True:
@@ -422,7 +451,7 @@ def main():
             code = 124
         else:
             time.sleep(min(args.interval, max(0.0, deadline - time.monotonic())))
-            root = parse_thread(root_path)
+            read_new(root)
             continue
         break
     found, kids = locate(home, args.thread_id)

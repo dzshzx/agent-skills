@@ -7,8 +7,9 @@
 
 fake_codex_daemon.py <codex-home> <scenario.json> <log.jsonl>: serve one thread on
 <codex-home>/app-server-control/app-server-control.sock; scenario holds the thread id, its
-status type and its turns. Every request is appended to the log; a sent turn completes at once
-with the final answer "done".
+status type and its turns, and is reread on each connection so one daemon can serve several
+scenarios. Every request is appended to the log; a sent turn completes at once with the final
+answer "done".
 """
 
 import asyncio
@@ -20,12 +21,12 @@ from websockets.asyncio.server import unix_serve
 
 
 async def main(home, scenario_path, log_path):
-    scenario = json.loads(Path(scenario_path).read_text())
     sock = Path(home) / "app-server-control" / "app-server-control.sock"
     sock.parent.mkdir(parents=True, exist_ok=True)
     log = Path(log_path)
 
     async def handle(ws):
+        scenario = json.loads(Path(scenario_path).read_text())
         async for raw in ws:
             message = json.loads(raw)
             if "id" not in message:

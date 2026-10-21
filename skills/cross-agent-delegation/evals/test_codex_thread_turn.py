@@ -64,32 +64,41 @@ class CodexThreadTurnTest(unittest.TestCase):
 
 
 class CodexThreadTurnDaemonTest(unittest.TestCase):
-    """Against fake_codex_daemon.py: which requests are sent, ids line and exit code."""
+    """Against fake_codex_daemon.py: which requests are sent, ids line and exit code.
 
-    def daemon(self, status, turns=()):
+    One daemon serves the class; each test rewrites its scenario and clears the request log.
+    """
+
+    @classmethod
+    def setUpClass(cls):
         tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        home = Path(tmp.name)
-        scenario = home / "scenario.json"
-        scenario.write_text(
-            json.dumps({"thread_id": THREAD, "status": status, "turns": list(turns)})
-        )
-        self.log = home / "requests.jsonl"
+        cls.addClassCleanup(tmp.cleanup)
+        cls.home = Path(tmp.name)
+        cls.scenario = cls.home / "scenario.json"
+        cls.log = cls.home / "requests.jsonl"
+        cls.brief = cls.home / "brief.md"
+        cls.brief.write_text("hello\n")
         proc = subprocess.Popen(
-            ["uv", "run", "-q", "--script", str(FAKE_DAEMON), tmp.name, str(scenario)]
-            + [str(self.log)]
+            ["uv", "run", "-q", "--script", str(FAKE_DAEMON), tmp.name]
+            + [str(cls.scenario), str(cls.log)]
         )
-        self.addCleanup(proc.wait)
-        self.addCleanup(proc.terminate)
-        sock = home / "app-server-control" / "app-server-control.sock"
+        cls.addClassCleanup(proc.wait)
+        cls.addClassCleanup(proc.terminate)
+        sock = cls.home / "app-server-control" / "app-server-control.sock"
         deadline = time.monotonic() + 60
         while not sock.exists():
-            self.assertIsNone(proc.poll(), "fake daemon exited")
-            self.assertLess(time.monotonic(), deadline, "fake daemon did not start")
+            if proc.poll() is not None:
+                raise RuntimeError("fake daemon exited")
+            if time.monotonic() > deadline:
+                raise RuntimeError("fake daemon did not start")
             time.sleep(0.1)
-        brief = home / "brief.md"
-        brief.write_text("hello\n")
-        return home, brief
+
+    def daemon(self, status, turns=()):
+        self.scenario.write_text(
+            json.dumps({"thread_id": THREAD, "status": status, "turns": list(turns)})
+        )
+        self.log.unlink(missing_ok=True)
+        return self.home, self.brief
 
     def requests(self):
         lines = self.log.read_text().splitlines() if self.log.exists() else []
@@ -144,6 +153,7 @@ class CodexThreadTurnDaemonTest(unittest.TestCase):
             ["initialize", "thread/loaded/list", "thread/resume", "turn/steer"],
         )
         reads = [r for r in self.requests() if r["method"] == "thread/read"]
+        self.assertEqual(len(reads), 1)
         self.assertTrue(reads[-1]["params"].get("includeTurns"))
         steer = self.requests()[-1]["params"]
         self.assertEqual(steer["expectedTurnId"], "live")
@@ -162,12 +172,6 @@ class CodexThreadTurnDaemonTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("no in-progress turn found to steer", result.stderr)
         self.assertEqual(self.methods(), ["initialize", "thread/loaded/list"])
-
-    def test_steer_reads_the_thread_once(self):
-        home, brief = self.daemon("active", [{"id": "live", "status": "inProgress"}])
-        run(THREAD, str(brief), "--steer", codex_home=str(home))
-        reads = [r for r in self.requests() if r["method"] == "thread/read"]
-        self.assertEqual(len(reads), 1)
 
 
 if __name__ == "__main__":
