@@ -6,7 +6,7 @@
 set -euo pipefail
 
 RUFF_VERSION=0.17.1
-PRETTIER_VERSION=3.9.9
+PRETTIER_VERSION=3.9.10
 SHFMT_VERSION=3.14.1
 # shfmt 经 PyPI 包 shfmt-py 分发，该版本内置上面的 shfmt。
 SHFMT_PY_VERSION=4.2.0
