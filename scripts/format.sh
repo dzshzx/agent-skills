@@ -37,7 +37,8 @@ cd "$ROOT"
 files() {
   local f
   git ls-files -z --cached --others --exclude-standard -- "$@" "${EXCLUDE[@]}" | while IFS= read -r -d '' f; do
-    [ -f "$f" ] && printf '%s\0' "$f"
+    [ -f "$f" ] || continue
+    printf '%s\0' "$f"
   done
 }
 
@@ -63,9 +64,13 @@ shfmt() {
 }
 
 mapfile -d '' PY < <(files '*.py' '*.pyi')
+# 进程替换的退出码不会自动传出：每个 < <(...) 之后 wait "$!" 取回，git ls-files 失败时随 set -e 退出。
+wait "$!"
 mapfile -d '' PRETTIER < <(files '*.js' '*.mjs' '*.cjs' '*.jsx' '*.ts' '*.mts' '*.cts' '*.tsx' \
   '*.md' '*.yml' '*.yaml' '*.json')
+wait "$!"
 mapfile -d '' SH < <(files '*.sh' '*.bash')
+wait "$!"
 
 FAIL=0
 if [ ${#PY[@]} -gt 0 ]; then
