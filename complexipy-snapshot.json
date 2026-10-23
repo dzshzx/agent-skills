@@ -38,20 +38,8 @@
         "complexity": 17
       },
       {
-        "name": "check_tree",
-        "complexity": 92
-      },
-      {
-        "name": "command_attempts",
-        "complexity": 98
-      },
-      {
         "name": "event_summary",
         "complexity": 18
-      },
-      {
-        "name": "read_node",
-        "complexity": 77
       },
       {
         "name": "read_options",
@@ -66,16 +54,6 @@
       {
         "name": "main",
         "complexity": 23
-      }
-    ]
-  },
-  {
-    "path": "skills/codex-subagent-routing/evals/task_skill_check.py",
-    "file_name": "task_skill_check.py",
-    "functions": [
-      {
-        "name": "check",
-        "complexity": 106
       }
     ]
   },
