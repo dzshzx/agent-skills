@@ -1,12 +1,9 @@
 # Codex CLI — headless contract
 
 ```bash
-AGENT_DELEGATED=1 codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o "$SCRATCH/last.txt" -- "$(cat "$BRIEF")" </dev/null
+codex exec --skip-git-repo-check --sandbox <read-only|workspace-write> --json -o "$SCRATCH/last.txt" -- "$(cat "$BRIEF")" </dev/null
 ```
 
-- `AGENT_DELEGATED=1` marks the run as delegated work, so hooks on the delegate's side can tell it
-  from a session the user started (for example, to keep a delegate from opening tickets). Put it on
-  every launch and every resume: it is not saved with the session.
 - `--` before the prompt (and before `<thread_id>` on a resume): a brief whose first line starts
   with `-` is otherwise an `unexpected argument` (exit 2, no model call). An empty prompt is not
   rejected — it starts a real turn.
@@ -23,7 +20,7 @@ AGENT_DELEGATED=1 codex exec --skip-git-repo-check --sandbox <read-only|workspac
   evidence, inspect the matching thread's persisted rollout under `$CODEX_HOME/sessions`
   (default `~/.codex/sessions`) for the call and its completion/result; stdout JSONL alone
   cannot establish whether `view_image` ran.
-- Continue: `AGENT_DELEGATED=1 codex exec --sandbox <mode> resume --skip-git-repo-check --json -o "$SCRATCH/last.txt" -- <thread_id> "$(cat "$BRIEF")" </dev/null`,
+- Continue: `codex exec --sandbox <mode> resume --skip-git-repo-check --json -o "$SCRATCH/last.txt" -- <thread_id> "$(cat "$BRIEF")" </dev/null`,
   with the id from the `thread.started` event. `--sandbox` is an `exec` option and goes _before_
   `resume` — after it, it is an unexpected argument (same rule as `review` below); `--skip-git-repo-check`,
   `--json` and `-o` are accepted after `resume`.
@@ -65,9 +62,6 @@ AGENT_DELEGATED=1 codex exec --skip-git-repo-check --sandbox <read-only|workspac
   uv run --script scripts/codex_thread_turn.py "$THREAD_ID" "$BRIEF" [--wait] [--timeout 1800]
   ```
 
-  A turn sent this way runs in the daemon's environment, so `AGENT_DELEGATED=1` does not reach the
-  delegate's hooks; say in the brief that the delegate reports findings instead of opening tickets.
-
   Without `--wait` it returns once the daemon accepts the turn (exit 0, ids on stderr) and the
   turn keeps running; read its progress and answer from the thread's rollout
   (`$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl`, finished at `task_complete` or `turn_aborted`). With `--wait` it
@@ -100,6 +94,6 @@ AGENT_DELEGATED=1 codex exec --skip-git-repo-check --sandbox <read-only|workspac
   `--uncommitted`, `--base <branch>` or `--commit <sha>` _or_ a prompt argument, never both.
 
 ```bash
-AGENT_DELEGATED=1 codex exec --sandbox read-only review --uncommitted --json -o "$SCRATCH/last.txt" </dev/null
-AGENT_DELEGATED=1 codex exec --sandbox read-only review --json -o "$SCRATCH/last.txt" -- "$(cat "$BRIEF")" </dev/null
+codex exec --sandbox read-only review --uncommitted --json -o "$SCRATCH/last.txt" </dev/null
+codex exec --sandbox read-only review --json -o "$SCRATCH/last.txt" -- "$(cat "$BRIEF")" </dev/null
 ```

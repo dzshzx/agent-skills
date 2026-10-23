@@ -1,12 +1,9 @@
 # Claude Code — headless contract
 
 ```bash
-AGENT_DELEGATED=1 claude -p --output-format json --permission-mode acceptEdits -- "$(cat "$BRIEF")" </dev/null
+claude -p --output-format json --permission-mode acceptEdits -- "$(cat "$BRIEF")" </dev/null
 ```
 
-- `AGENT_DELEGATED=1` marks the run as delegated work, so hooks on the delegate's side can tell it
-  from a session the user started (for example, to keep a delegate from opening tickets). Put it on
-  every launch and every resume: it is not saved with the session.
 - Answer: `.result`. Continuation handle: `.session_id`.
 - External inputs and reports: add `--add-dir "$INPUT_DIR" "$REPORT_DIR"` when the task
   needs directories outside cwd. Check that they exist before launch. This grants directory
@@ -14,8 +11,8 @@ AGENT_DELEGATED=1 claude -p --output-format json --permission-mode acceptEdits -
   invocations (with the common timeout and output capture around each):
 
   ```bash
-  AGENT_DELEGATED=1 claude -p --output-format json --permission-mode acceptEdits --add-dir "$INPUT_DIR" "$REPORT_DIR" --allowedTools 'Bash(python3:*)' -- "$(cat "$BRIEF")" </dev/null
-  AGENT_DELEGATED=1 claude -p --resume "$SESSION_ID" --output-format json --permission-mode acceptEdits --add-dir "$INPUT_DIR" "$REPORT_DIR" --allowedTools 'Bash(python3:*)' -- "$(cat "$BRIEF")" </dev/null
+  claude -p --output-format json --permission-mode acceptEdits --add-dir "$INPUT_DIR" "$REPORT_DIR" --allowedTools 'Bash(python3:*)' -- "$(cat "$BRIEF")" </dev/null
+  claude -p --resume "$SESSION_ID" --output-format json --permission-mode acceptEdits --add-dir "$INPUT_DIR" "$REPORT_DIR" --allowedTools 'Bash(python3:*)' -- "$(cat "$BRIEF")" </dev/null
   ```
 
   Set `SESSION_ID` from the first result's `.session_id`, replace the brief with the follow-up,
@@ -28,7 +25,7 @@ AGENT_DELEGATED=1 claude -p --output-format json --permission-mode acceptEdits -
 - **Failure lives in `.is_error` and `.terminal_reason`, never `.subtype`.** A failed run exits
   non-zero with `"is_error":true` while `subtype` still reads `"success"`. Branching on
   `subtype` reports every failure as a success.
-- Continue: `AGENT_DELEGATED=1 claude -p --resume <session_id> --output-format json --permission-mode <mode> -- "$(cat "$BRIEF")" </dev/null`.
+- Continue: `claude -p --resume <session_id> --output-format json --permission-mode <mode> -- "$(cat "$BRIEF")" </dev/null`.
   **A resume restores the conversation, not the posture.** It starts under the cwd's default
   permission mode with the full tool set: a `dontAsk` session resumed bare wrote the file it had
   just been denied, and a `--tools Read,Grep,Glob` session resumed bare lists `Write` in its
