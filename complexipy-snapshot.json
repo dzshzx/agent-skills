@@ -94,10 +94,6 @@
       {
         "name": "report",
         "complexity": 26
-      },
-      {
-        "name": "summarize",
-        "complexity": 117
       }
     ]
   },

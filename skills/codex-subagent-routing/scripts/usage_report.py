@@ -137,162 +137,223 @@ def price(request, prices):
     ) / 1_000_000
 
 
-def summarize(tid, node, since=None, until=None, prices=None):
-    meta = node["meta"]
-    spawn = thread_spawn(meta)
-    parent = parent_thread_id(meta)
-    source = meta.get("source")
-    is_subagent = bool(parent) or (isinstance(source, dict) and "subagent" in source)
-    current = {"model": None, "effort": None, "service_tier": None}
-    requests, seen, limits, moments = [], {}, [], []
-    counts = {"turn_starts": 0, "continuation_calls": 0, "compactions": 0}
-    status = "unknown"
-    missing = set()
-    if is_subagent:
-        if not spawn.get("agent_role"):
-            missing.add("agent_role")
-        if not parent:
-            missing.add("parent_thread_id")
+TOKEN_FIELDS = ("input_tokens", "cached_input_tokens", "output_tokens")
+TURN_STARTED = {"task_started", "turn_started"}
+EVENT_STATUS = {
+    "task_started": "running",
+    "turn_started": "running",
+    "task_complete": "completed",
+    "turn_completed": "completed",
+    "task_failed": "failed_or_aborted",
+    "turn_failed": "failed_or_aborted",
+    "turn_aborted": "failed_or_aborted",
+    "error": "failed_or_aborted",
+}
+CONTINUATION_TOOLS = {"followup_task", "send_input", "resume_agent"}
+
+
+def typed_usage_index(tid, rows):
     # Current runtimes persist authoritative per-response records alongside
     # UI token_count snapshots. Match cumulative totals to avoid counting both.
-    typed_snapshots, typed_turns = set(), set()
-    current_turn = None
-    for item in node["rows"]:
+    snapshots, turns = set(), set()
+    for item in rows:
+        if item.get("type") != "token_usage_record":
+            continue
         payload = item.get("payload", {})
-        if item.get("type") == "token_usage_record":
-            if payload.get("thread_id") != tid:
-                raise ValueError(f"foreign token usage inside own boundary of {tid}")
-            if payload.get("thread_token_usage"):
-                typed_snapshots.add(
-                    json.dumps(payload["thread_token_usage"], sort_keys=True)
-                )
-            typed_turns.add(payload.get("turn_id"))
-    for row in node["rows"]:
+        if payload.get("thread_id") != tid:
+            raise ValueError(f"foreign token usage inside own boundary of {tid}")
+        if payload.get("thread_token_usage"):
+            snapshots.add(json.dumps(payload["thread_token_usage"], sort_keys=True))
+        turns.add(payload.get("turn_id"))
+    return snapshots, turns
+
+
+def is_token_event(kind, payload):
+    return kind == "token_usage_record" or (
+        kind == "event_msg" and payload.get("type") == "token_count"
+    )
+
+
+def validate_usage(tid, usage):
+    for field in TOKEN_FIELDS:
+        if not isinstance(usage.get(field), int) or usage[field] < 0:
+            raise ValueError(f"missing or invalid {field} in {tid}")
+    if usage["cached_input_tokens"] > usage["input_tokens"]:
+        raise ValueError("cached input exceeds total input")
+
+
+def event_span(moments):
+    if not moments:
+        return {"elapsed_seconds": None, "first_event": None, "last_event": None}
+    first, last = min(moments), max(moments)
+    return {
+        "elapsed_seconds": (last - first).total_seconds(),
+        "first_event": first.isoformat(),
+        "last_event": last.isoformat(),
+    }
+
+
+def lineage_gaps(spawn, parent):
+    """Lineage fields a subagent thread is expected to record but lacks."""
+    gaps = set()
+    if not spawn.get("agent_role"):
+        gaps.add("agent_role")
+    if not parent:
+        gaps.add("parent_thread_id")
+    return gaps
+
+
+class ThreadScan:
+    """Accumulates one thread's own rows: lifecycle events inside the window,
+    and token usage deduplicated across the whole thread."""
+
+    def __init__(self, tid, rows, since, until, prices):
+        self.tid, self.since, self.until, self.prices = tid, since, until, prices
+        self.typed_snapshots, self.typed_turns = typed_usage_index(tid, rows)
+        self.current = {"model": None, "effort": None, "service_tier": None}
+        self.current_turn = None
+        self.requests, self.seen, self.limits, self.moments = [], {}, [], []
+        self.counts = {"turn_starts": 0, "continuation_calls": 0, "compactions": 0}
+        self.status = "unknown"
+        self.missing = set()
+
+    def in_range(self, when):
+        return not (
+            (self.since and when < self.since) or (self.until and when >= self.until)
+        )
+
+    def scan(self, row):
         p = row.get("payload", {})
         if not isinstance(p, dict):
-            continue
+            return
         kind = row.get("type")
         if kind == "turn_context":
-            current_turn = p.get("turn_id")
-            current = {
+            self.current_turn = p.get("turn_id")
+            self.current = {
                 "model": p.get("model"),
                 "effort": p.get("effort", p.get("reasoning_effort")),
                 "service_tier": p.get("service_tier"),
             }
         raw_time = row.get("timestamp")
         if not raw_time:
-            missing.add("event_timestamp")
-            continue
+            self.missing.add("event_timestamp")
+            return
         when = timestamp(raw_time)
-        in_range = not ((since and when < since) or (until and when >= until))
-        token_event = kind == "token_usage_record" or (
-            kind == "event_msg" and p.get("type") == "token_count"
-        )
-        if not in_range and not token_event:
-            continue
+        in_range = self.in_range(when)
+        # Lifecycle events count only inside the window; token events outside
+        # it still feed deduplication so a later in-range repeat is not new.
         if in_range:
-            moments.append(when)
-        if kind == "event_msg" and p.get("type") in {"task_started", "turn_started"}:
-            counts["turn_starts"] += 1
-            status = "running"
-        if kind == "event_msg" and p.get("type") in {"task_complete", "turn_completed"}:
-            status = "completed"
-        if kind == "event_msg" and p.get("type") in {
-            "task_failed",
-            "turn_failed",
-            "turn_aborted",
-            "error",
-        }:
-            status = "failed_or_aborted"
-        if kind == "compacted" or (
-            kind == "event_msg" and p.get("type") == "context_compacted"
-        ):
-            counts["compactions"] += 1
+            self.moments.append(when)
+            self.note_event(kind, p)
+        if is_token_event(kind, p):
+            self.note_tokens(kind, p, raw_time, in_range)
+
+    def note_event(self, kind, p):
+        event = p.get("type") if kind == "event_msg" else None
+        if event in TURN_STARTED:
+            self.counts["turn_starts"] += 1
+        self.status = EVENT_STATUS.get(event, self.status)
+        if kind == "compacted" or event == "context_compacted":
+            self.counts["compactions"] += 1
         if kind == "response_item" and p.get("type") == "function_call":
-            if p.get("name", "").split(".")[-1] in {
-                "followup_task",
-                "send_input",
-                "resume_agent",
-            }:
-                counts["continuation_calls"] += 1
-        if not token_event:
-            continue
+            if p.get("name", "").split(".")[-1] in CONTINUATION_TOOLS:
+                self.counts["continuation_calls"] += 1
+
+    def note_rate_limits(self, raw_time, value):
+        if not self.limits or self.limits[-1]["value"] != value:
+            self.limits.append({"timestamp": raw_time, "value": value})
+
+    def note_tokens(self, kind, p, raw_time, in_range):
         if in_range and p.get("rate_limits"):
-            snap = {"timestamp": raw_time, "value": p["rate_limits"]}
-            if not limits or limits[-1]["value"] != snap["value"]:
-                limits.append(snap)
+            self.note_rate_limits(raw_time, p["rate_limits"])
         info = p.get("info") or {}
         typed = kind == "token_usage_record"
-        if not typed and current_turn in typed_turns:
+        if not typed and self.current_turn in self.typed_turns:
             # UI cumulative totals can change meaning after compaction. Native
             # records own accounting for the entire turn, regardless of that
             # display reset; UI-only older turns retain the legacy fallback.
-            continue
+            return
         usage = p.get("usage") if typed else info.get("last_token_usage")
         if not usage:
-            continue
-        if all(
-            usage.get(k) == 0
-            for k in ("input_tokens", "output_tokens", "cached_input_tokens")
-        ):
+            return
+        if all(usage.get(k) == 0 for k in TOKEN_FIELDS):
             # Compaction/status updates can carry a nonzero context total but
             # zero billed components; they are not another completed response.
-            continue
+            return
         response = p.get("response_id") or info.get("response_id")
         cumulative = (
             p.get("thread_token_usage") if typed else info.get("total_token_usage")
         )
+        key = self.response_key(typed, response, cumulative)
+        if key is None or self.already_seen(key, usage):
+            return
+        if in_range:
+            self.add_request(raw_time, response, usage, p, info)
+
+    def response_key(self, typed, response, cumulative):
+        """Deduplication key for a usage event, or None when it is excluded."""
         if (
             not typed
             and cumulative
-            and json.dumps(cumulative, sort_keys=True) in typed_snapshots
+            and json.dumps(cumulative, sort_keys=True) in self.typed_snapshots
         ):
-            continue
+            return None
         if response:
-            key = ("response", response)
-        elif cumulative:
-            key = ("cumulative", json.dumps(cumulative, sort_keys=True))
-            missing.add("response_id: cumulative snapshot deduplication used")
-        else:
-            missing.add("response_identity: usage excluded")
-            continue
-        if key in seen:
-            if seen[key] != usage:
-                raise ValueError(f"conflicting response usage in {tid}")
-            continue
-        seen[key] = usage
-        if not in_range:
-            continue
-        for field in ("input_tokens", "cached_input_tokens", "output_tokens"):
-            if not isinstance(usage.get(field), int) or usage[field] < 0:
-                raise ValueError(f"missing or invalid {field} in {tid}")
-        if usage["cached_input_tokens"] > usage["input_tokens"]:
-            raise ValueError("cached input exceeds total input")
+            return ("response", response)
+        if cumulative:
+            self.missing.add("response_id: cumulative snapshot deduplication used")
+            return ("cumulative", json.dumps(cumulative, sort_keys=True))
+        self.missing.add("response_identity: usage excluded")
+        return None
+
+    def already_seen(self, key, usage):
+        if key in self.seen:
+            if self.seen[key] != usage:
+                raise ValueError(f"conflicting response usage in {self.tid}")
+            return True
+        self.seen[key] = usage
+        return False
+
+    def add_request(self, raw_time, response, usage, p, info):
+        validate_usage(self.tid, usage)
         request = {
             "timestamp": raw_time,
             "response_id": response,
-            **current,
+            **self.current,
             "usage": usage,
         }
         # Only an explicitly logged actual tier is attributed, never today's config.
         request["service_tier"] = (
-            p.get("service_tier") or info.get("service_tier") or current["service_tier"]
+            p.get("service_tier")
+            or info.get("service_tier")
+            or self.current["service_tier"]
         )
         for field in ("model", "effort", "service_tier"):
             if not request[field]:
-                missing.add(field)
-        request["cost"] = price(request, prices)
-        requests.append(request)
-    totals = {
-        k: sum(r["usage"][k] for r in requests)
-        for k in ("input_tokens", "cached_input_tokens", "output_tokens")
-    }
+                self.missing.add(field)
+        request["cost"] = price(request, self.prices)
+        self.requests.append(request)
+
+
+def summarize(tid, node, since=None, until=None, prices=None):
+    meta = node["meta"]
+    spawn = thread_spawn(meta)
+    parent = parent_thread_id(meta)
+    source = meta.get("source")
+    is_subagent = bool(parent) or (isinstance(source, dict) and "subagent" in source)
+    scan = ThreadScan(tid, node["rows"], since, until, prices)
+    if is_subagent:
+        scan.missing.update(lineage_gaps(spawn, parent))
+    for row in node["rows"]:
+        scan.scan(row)
+    requests = scan.requests
     known = sum(r["cost"] for r in requests if r["cost"] is not None)
+    priced = bool(requests) and all(r["cost"] is not None for r in requests)
     return {
         "thread_id": tid,
         "parent_thread_id": parent,
         "role": spawn.get("agent_role") or ("unknown" if is_subagent else "main"),
-        "status": status,
+        "status": scan.status,
         "files": node["files"],
         "observed_responses": len(requests),
         "first_request_input": requests[0]["usage"]["input_tokens"]
@@ -301,20 +362,14 @@ def summarize(tid, node, since=None, until=None, prices=None):
         "peak_request_input": max(
             (r["usage"]["input_tokens"] for r in requests), default=None
         ),
-        "totals": totals,
-        **counts,
+        "totals": {k: sum(r["usage"][k] for r in requests) for k in TOKEN_FIELDS},
+        **scan.counts,
         "resume_status": "unknown unless explicit continuation call observed",
-        "elapsed_seconds": (max(moments) - min(moments)).total_seconds()
-        if moments
-        else None,
-        "first_event": min(moments).isoformat() if moments else None,
-        "last_event": max(moments).isoformat() if moments else None,
+        **event_span(scan.moments),
         "known_cost_subtotal": known,
-        "cost": known
-        if requests and all(r["cost"] is not None for r in requests)
-        else None,
-        "missing": sorted(missing),
-        "rate_limit_snapshots": limits,
+        "cost": known if priced else None,
+        "missing": sorted(scan.missing),
+        "rate_limit_snapshots": scan.limits,
         "requests": requests,
     }
 

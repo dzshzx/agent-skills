@@ -303,6 +303,36 @@ class UsageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             report({"p": node})
 
+    def test_lifecycle_counts_rate_limits_and_window_dedup(self):
+        usage = {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 1}
+        token = {
+            "type": "token_count",
+            "rate_limits": {"primary": 5},
+            "info": {"last_token_usage": usage, "response_id": "r1"},
+        }
+        node = self.node()
+        node["rows"] = [
+            # Before the window: excluded, yet it still claims response r1.
+            row("event_msg", token, 1),
+            row("event_msg", {"type": "turn_started"}, 2),
+            row("response_item", {"type": "function_call", "name": "a.send_input"}, 3),
+            row("compacted", {}, 4),
+            row("event_msg", token, 5),
+            row("event_msg", {"type": "turn_aborted"}, 6),
+            row("event_msg", {"type": "task_started"}, 7),
+        ]
+        detail = report({"p": node}, since=timestamp("2026-09-12T00:00:02Z"))[
+            "threads"
+        ][0]
+        self.assertEqual(detail["status"], "running")
+        self.assertEqual(
+            [detail[k] for k in ("turn_starts", "continuation_calls", "compactions")],
+            [2, 1, 1],
+        )
+        self.assertEqual(detail["observed_responses"], 0)
+        self.assertEqual(len(detail["rate_limit_snapshots"]), 1)
+        self.assertEqual(detail["first_event"], "2026-09-12T00:00:02+00:00")
+
     def test_unicode_separator_and_zero_compaction_usage(self):
         with tempfile.TemporaryDirectory() as tmp:
             node = self.node()
