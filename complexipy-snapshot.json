@@ -1,0 +1,198 @@
+[
+  {
+    "path": "scripts/tests/test_ci_evidence.py",
+    "file_name": "test_ci_evidence.py",
+    "functions": [
+      {
+        "name": "ReuseEvidenceTest::test_only_trusted_complete_exact_sha_runs_are_reused",
+        "complexity": 25
+      }
+    ]
+  },
+  {
+    "path": "scripts/validate_repository.py",
+    "file_name": "validate_repository.py",
+    "functions": [
+      {
+        "name": "validate",
+        "complexity": 30
+      }
+    ]
+  },
+  {
+    "path": "scripts/version_plan.py",
+    "file_name": "version_plan.py",
+    "functions": [
+      {
+        "name": "build_plan",
+        "complexity": 20
+      }
+    ]
+  },
+  {
+    "path": "skills/codex-subagent-routing/evals/check_logs.py",
+    "file_name": "check_logs.py",
+    "functions": [
+      {
+        "name": "check_run",
+        "complexity": 17
+      },
+      {
+        "name": "check_tree",
+        "complexity": 92
+      },
+      {
+        "name": "command_attempts",
+        "complexity": 98
+      },
+      {
+        "name": "event_summary",
+        "complexity": 18
+      },
+      {
+        "name": "read_node",
+        "complexity": 77
+      },
+      {
+        "name": "read_options",
+        "complexity": 38
+      }
+    ]
+  },
+  {
+    "path": "skills/codex-subagent-routing/evals/live_check.py",
+    "file_name": "live_check.py",
+    "functions": [
+      {
+        "name": "main",
+        "complexity": 23
+      }
+    ]
+  },
+  {
+    "path": "skills/codex-subagent-routing/evals/task_skill_check.py",
+    "file_name": "task_skill_check.py",
+    "functions": [
+      {
+        "name": "check",
+        "complexity": 106
+      }
+    ]
+  },
+  {
+    "path": "skills/codex-subagent-routing/scripts/usage_report.py",
+    "file_name": "usage_report.py",
+    "functions": [
+      {
+        "name": "load_threads",
+        "complexity": 59
+      },
+      {
+        "name": "main",
+        "complexity": 20
+      },
+      {
+        "name": "report",
+        "complexity": 26
+      },
+      {
+        "name": "summarize",
+        "complexity": 117
+      }
+    ]
+  },
+  {
+    "path": "skills/cross-agent-delegation/evals/fake_codex_daemon.py",
+    "file_name": "fake_codex_daemon.py",
+    "functions": [
+      {
+        "name": "main",
+        "complexity": 24
+      }
+    ]
+  },
+  {
+    "path": "skills/cross-agent-delegation/scripts/codex_thread_progress.py",
+    "file_name": "codex_thread_progress.py",
+    "functions": [
+      {
+        "name": "add_replies",
+        "complexity": 21
+      },
+      {
+        "name": "apply_record",
+        "complexity": 55
+      },
+      {
+        "name": "locate",
+        "complexity": 19
+      },
+      {
+        "name": "main",
+        "complexity": 24
+      }
+    ]
+  },
+  {
+    "path": "skills/cross-agent-delegation/scripts/codex_thread_turn.py",
+    "file_name": "codex_thread_turn.py",
+    "functions": [
+      {
+        "name": "run",
+        "complexity": 17
+      },
+      {
+        "name": "wait_for_turn",
+        "complexity": 23
+      }
+    ]
+  },
+  {
+    "path": "skills/sync-agents-instructions/evals/call_evidence.py",
+    "file_name": "call_evidence.py",
+    "functions": [
+      {
+        "name": "parse",
+        "complexity": 37
+      },
+      {
+        "name": "ran",
+        "complexity": 33
+      }
+    ]
+  },
+  {
+    "path": "skills/sync-agents-instructions/evals/scope_evidence.py",
+    "file_name": "scope_evidence.py",
+    "functions": [
+      {
+        "name": "check",
+        "complexity": 22
+      }
+    ]
+  },
+  {
+    "path": "skills/sync-agents-instructions/evals/test_regressions.py",
+    "file_name": "test_regressions.py",
+    "functions": [
+      {
+        "name": "ConfigTests::test_paths_and_enums_in_both_modes",
+        "complexity": 21
+      }
+    ]
+  },
+  {
+    "path": "skills/sync-agents-instructions/scripts/validate_config.py",
+    "file_name": "validate_config.py",
+    "functions": [
+      {
+        "name": "Config::cross_entry_rules",
+        "complexity": 23
+      },
+      {
+        "name": "render_location",
+        "complexity": 18
+      }
+    ]
+  }
+]

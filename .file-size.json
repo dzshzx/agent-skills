@@ -1,0 +1,43 @@
+{
+  "oversize": {
+    "skills/codex-subagent-routing/evals/test_check_logs.py": {
+      "bytes": 39517,
+      "reason": "存量，待整改"
+    },
+    "skills/cross-agent-delegation/evals/live-check.sh": {
+      "bytes": 33732,
+      "reason": "存量，待整改"
+    }
+  },
+  "exclude": [],
+  "complexity": {
+    "scripts/tests/test_ci_evidence.py::ReuseEvidenceTest::test_only_trusted_complete_exact_sha_runs_are_reused": "存量，待整改",
+    "scripts/validate_repository.py::validate": "存量，待整改",
+    "scripts/version_plan.py::build_plan": "存量，待整改",
+    "skills/codex-subagent-routing/evals/check_logs.py::check_run": "存量，待整改",
+    "skills/codex-subagent-routing/evals/check_logs.py::check_tree": "存量，待整改",
+    "skills/codex-subagent-routing/evals/check_logs.py::command_attempts": "存量，待整改",
+    "skills/codex-subagent-routing/evals/check_logs.py::event_summary": "存量，待整改",
+    "skills/codex-subagent-routing/evals/check_logs.py::read_node": "存量，待整改",
+    "skills/codex-subagent-routing/evals/check_logs.py::read_options": "存量，待整改",
+    "skills/codex-subagent-routing/evals/live_check.py::main": "存量，待整改",
+    "skills/codex-subagent-routing/evals/task_skill_check.py::check": "存量，待整改",
+    "skills/codex-subagent-routing/scripts/usage_report.py::load_threads": "存量，待整改",
+    "skills/codex-subagent-routing/scripts/usage_report.py::main": "存量，待整改",
+    "skills/codex-subagent-routing/scripts/usage_report.py::report": "存量，待整改",
+    "skills/codex-subagent-routing/scripts/usage_report.py::summarize": "存量，待整改",
+    "skills/cross-agent-delegation/evals/fake_codex_daemon.py::main": "存量，待整改",
+    "skills/cross-agent-delegation/scripts/codex_thread_progress.py::add_replies": "存量，待整改",
+    "skills/cross-agent-delegation/scripts/codex_thread_progress.py::apply_record": "存量，待整改",
+    "skills/cross-agent-delegation/scripts/codex_thread_progress.py::locate": "存量，待整改",
+    "skills/cross-agent-delegation/scripts/codex_thread_progress.py::main": "存量，待整改",
+    "skills/cross-agent-delegation/scripts/codex_thread_turn.py::run": "存量，待整改",
+    "skills/cross-agent-delegation/scripts/codex_thread_turn.py::wait_for_turn": "存量，待整改",
+    "skills/sync-agents-instructions/evals/call_evidence.py::parse": "存量，待整改",
+    "skills/sync-agents-instructions/evals/call_evidence.py::ran": "存量，待整改",
+    "skills/sync-agents-instructions/evals/scope_evidence.py::check": "存量，待整改",
+    "skills/sync-agents-instructions/evals/test_regressions.py::ConfigTests::test_paths_and_enums_in_both_modes": "存量，待整改",
+    "skills/sync-agents-instructions/scripts/validate_config.py::Config::cross_entry_rules": "存量，待整改",
+    "skills/sync-agents-instructions/scripts/validate_config.py::render_location": "存量，待整改"
+  }
+}
