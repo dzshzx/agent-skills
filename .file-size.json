@@ -2,12 +2,6 @@
   "oversize": {},
   "exclude": [],
   "complexity": {
-    "scripts/tests/test_ci_evidence.py::ReuseEvidenceTest::test_only_trusted_complete_exact_sha_runs_are_reused": "存量，待整改",
-    "skills/sync-agents-instructions/evals/call_evidence.py::parse": "存量，待整改",
-    "skills/sync-agents-instructions/evals/call_evidence.py::ran": "存量，待整改",
-    "skills/sync-agents-instructions/evals/scope_evidence.py::check": "存量，待整改",
-    "skills/sync-agents-instructions/evals/test_regressions.py::ConfigTests::test_paths_and_enums_in_both_modes": "存量，待整改",
-    "skills/sync-agents-instructions/scripts/validate_config.py::Config::cross_entry_rules": "存量，待整改",
-    "skills/sync-agents-instructions/scripts/validate_config.py::render_location": "存量，待整改"
+    "scripts/tests/test_ci_evidence.py::ReuseEvidenceTest::test_only_trusted_complete_exact_sha_runs_are_reused": "存量，待整改"
   }
 }

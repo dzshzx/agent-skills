@@ -8,53 +8,5 @@
         "complexity": 25
       }
     ]
-  },
-  {
-    "path": "skills/sync-agents-instructions/evals/call_evidence.py",
-    "file_name": "call_evidence.py",
-    "functions": [
-      {
-        "name": "parse",
-        "complexity": 37
-      },
-      {
-        "name": "ran",
-        "complexity": 33
-      }
-    ]
-  },
-  {
-    "path": "skills/sync-agents-instructions/evals/scope_evidence.py",
-    "file_name": "scope_evidence.py",
-    "functions": [
-      {
-        "name": "check",
-        "complexity": 22
-      }
-    ]
-  },
-  {
-    "path": "skills/sync-agents-instructions/evals/test_regressions.py",
-    "file_name": "test_regressions.py",
-    "functions": [
-      {
-        "name": "ConfigTests::test_paths_and_enums_in_both_modes",
-        "complexity": 21
-      }
-    ]
-  },
-  {
-    "path": "skills/sync-agents-instructions/scripts/validate_config.py",
-    "file_name": "validate_config.py",
-    "functions": [
-      {
-        "name": "Config::cross_entry_rules",
-        "complexity": 23
-      },
-      {
-        "name": "render_location",
-        "complexity": 18
-      }
-    ]
   }
 ]

@@ -9,40 +9,16 @@ import shlex
 
 def parse(path: Path, source: str) -> dict:
     result, reads, calls, completed = {}, set(), {}, []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            obj = json.loads(line)
-        except ValueError:
-            continue
+    for obj in events(path):
         if obj.get("type") == "result":
             result = obj
-        message = obj.get("message")
-        if not isinstance(message, dict):
-            continue
-        for block in message.get("content", []):
-            if not isinstance(block, dict):
-                continue
+        for block in content_blocks(obj):
             if block.get("type") == "tool_use":
-                inp = block.get("input") or {}
-                if block.get("name") == "Read":
-                    reads.add(str(inp.get("file_path")))
-                if block.get("name") == "Bash":
-                    calls[block["id"]] = str(inp.get("command", ""))
+                record_tool_use(block, reads, calls)
             elif (
                 block.get("type") == "tool_result" and block.get("tool_use_id") in calls
             ):
-                content = block.get("content", "")
-                if isinstance(content, list):
-                    content = "\n".join(
-                        b.get("text", "") for b in content if isinstance(b, dict)
-                    )
-                completed.append(
-                    {
-                        "command": calls[block["tool_use_id"]],
-                        "output": str(content),
-                        "failed": bool(block.get("is_error")),
-                    }
-                )
+                completed.append(completed_call(block, calls))
     return {
         "is_error": result.get("is_error"),
         "terminal_reason": result.get("terminal_reason"),
@@ -51,6 +27,41 @@ def parse(path: Path, source: str) -> dict:
         "reads": sorted(reads),
         "cmds": list(calls.values()),
         "completed": completed,
+    }
+
+
+def events(path: Path):
+    """Yield each JSON line of the stream-json transcript; skip unparsable lines."""
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            yield json.loads(line)
+        except ValueError:
+            continue
+
+
+def content_blocks(obj: dict) -> list[dict]:
+    message = obj.get("message")
+    if not isinstance(message, dict):
+        return []
+    return [block for block in message.get("content", []) if isinstance(block, dict)]
+
+
+def record_tool_use(block: dict, reads: set[str], calls: dict[str, str]) -> None:
+    inp = block.get("input") or {}
+    if block.get("name") == "Read":
+        reads.add(str(inp.get("file_path")))
+    if block.get("name") == "Bash":
+        calls[block["id"]] = str(inp.get("command", ""))
+
+
+def completed_call(block: dict, calls: dict[str, str]) -> dict:
+    content = block.get("content", "")
+    if isinstance(content, list):
+        content = "\n".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return {
+        "command": calls[block["tool_use_id"]],
+        "output": str(content),
+        "failed": bool(block.get("is_error")),
     }
 
 
@@ -90,30 +101,40 @@ def git_subcommand(words: list[str]) -> str | None:
 
 
 def ran(data: dict, kind: str) -> bool:
-    for call in data["completed"]:
-        if call["failed"]:
-            continue
-        parts = segments(call["command"])
-        if kind == "git-diff":
-            matches = [p for p in parts if git_subcommand(p) == "diff"]
-            # A standalone successful diff may be empty. In a compound call,
-            # require an actual patch and reject text-producing siblings.
-            safe = all(
-                git_subcommand(p) in ("diff", "status")
-                or p[0] in ("cp", "diff", "cd")
-                or (p[0] == "echo" and "diff --git" not in " ".join(p[1:]))
-                for p in parts
-            )
-            if matches and (
-                len(parts) == 1 or (safe and "diff --git " in call["output"])
-            ):
-                return True
-        elif kind == "validator":
-            runs = [p for p in parts if validator_target(p)]
-            if runs and all(p[0] == "cd" or validator_target(p) for p in parts):
-                if call["output"].startswith("OK: "):
-                    return True
-    return False
+    accepts = {"git-diff": shows_git_diff, "validator": ran_validator}.get(kind)
+    if accepts is None:
+        return False
+    return any(
+        not call["failed"] and accepts(segments(call["command"]), call["output"])
+        for call in data["completed"]
+    )
+
+
+def shows_git_diff(parts: list[list[str]], output: str) -> bool:
+    if not any(git_subcommand(p) == "diff" for p in parts):
+        return False
+    # A standalone successful diff may be empty. In a compound call,
+    # require an actual patch and reject text-producing siblings.
+    if len(parts) == 1:
+        return True
+    return all(quiet_diff_sibling(p) for p in parts) and "diff --git " in output
+
+
+def quiet_diff_sibling(p: list[str]) -> bool:
+    """True when segment p cannot itself print text that looks like a patch."""
+    return (
+        git_subcommand(p) in ("diff", "status")
+        or p[0] in ("cp", "diff", "cd")
+        or (p[0] == "echo" and "diff --git" not in " ".join(p[1:]))
+    )
+
+
+def ran_validator(parts: list[list[str]], output: str) -> bool:
+    if not any(validator_target(p) for p in parts):
+        return False
+    return all(
+        p[0] == "cd" or validator_target(p) for p in parts
+    ) and output.startswith("OK: ")
 
 
 def validator_target(p):

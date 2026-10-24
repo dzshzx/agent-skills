@@ -42,34 +42,37 @@ class ConfigTests(unittest.TestCase):
                 ],
             }
             for mode in (False, True):
-                for surface in ("..", "x/../..", ".", "x/..", "../AGENTS.md"):
-                    case = copy.deepcopy(data)
-                    case["agents"][0]["project_instruction_file"] = surface
-                    self.assertTrue(
-                        any(
-                            "must stay inside" in e
-                            for e in validator.Checker(case, mode).run()
-                        )
-                    )
-                for surface in ("AGENTS.md", "docs/AGENTS.md", "docs/../AGENTS.md"):
-                    case = copy.deepcopy(data)
-                    case["agents"][0]["project_instruction_file"] = surface
-                    self.assertEqual(validator.Checker(case, mode).run(), [])
-                for value in ([], {}, True, 1, "invalid"):
-                    case = copy.deepcopy(data)
-                    case["shared_sources"][0]["load"] = value
-                    case["agents"][0]["always_load_mode"] = value
-                    errors = validator.Checker(case, mode).run()
-                    self.assertTrue(any("shared_sources[0].load:" in e for e in errors))
-                    self.assertTrue(
-                        any("agents[codex].always_load_mode:" in e for e in errors)
-                    )
-                for load in validator.LOAD_MODES:
-                    for always in validator.ALWAYS_LOAD_MODES:
-                        case = copy.deepcopy(data)
-                        case["shared_sources"][0]["load"] = load
-                        case["agents"][0]["always_load_mode"] = always
-                        self.assertEqual(validator.Checker(case, mode).run(), [])
+                self.check_surfaces(data, mode)
+                self.check_enums(data, mode)
+
+    def check_surfaces(self, data, mode):
+        for surface in ("..", "x/../..", ".", "x/..", "../AGENTS.md"):
+            case = copy.deepcopy(data)
+            case["agents"][0]["project_instruction_file"] = surface
+            self.assertTrue(
+                any(
+                    "must stay inside" in e for e in validator.Checker(case, mode).run()
+                )
+            )
+        for surface in ("AGENTS.md", "docs/AGENTS.md", "docs/../AGENTS.md"):
+            case = copy.deepcopy(data)
+            case["agents"][0]["project_instruction_file"] = surface
+            self.assertEqual(validator.Checker(case, mode).run(), [])
+
+    def check_enums(self, data, mode):
+        for value in ([], {}, True, 1, "invalid"):
+            case = copy.deepcopy(data)
+            case["shared_sources"][0]["load"] = value
+            case["agents"][0]["always_load_mode"] = value
+            errors = validator.Checker(case, mode).run()
+            self.assertTrue(any("shared_sources[0].load:" in e for e in errors))
+            self.assertTrue(any("agents[codex].always_load_mode:" in e for e in errors))
+        for load in validator.LOAD_MODES:
+            for always in validator.ALWAYS_LOAD_MODES:
+                case = copy.deepcopy(data)
+                case["shared_sources"][0]["load"] = load
+                case["agents"][0]["always_load_mode"] = always
+                self.assertEqual(validator.Checker(case, mode).run(), [])
 
     def test_cli_exit_contract_and_no_traceback(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -215,59 +215,76 @@ class Config(Table):
             if check_paths and not Path(normalize_machine_path(value)).is_file():
                 report(where, f"file not found: {value}")
 
-        seen: dict[str, str] = {}
-        for index, source in enumerate(self.shared_sources):
-            where = f"shared_sources[{index}]"
-            normalized = normalize_machine_path(source.path)
-            if normalized in seen:
-                report(
-                    f"{where}.path",
-                    f"normalizes to the same file as {seen[normalized]}",
-                )
-            seen[normalized] = where
-            file_exists(f"{where}.path", source.path)
-
-        names: dict[str, str] = {}
-        entries: dict[str, str] = {}
-        owners: dict[str, str] = {}
-        for index, agent in enumerate(self.agents):
-            where = f"agents[{index}]"
-            if agent.name in names:
-                report(f"{where}.name", f"duplicates {names[agent.name]}")
-            else:
-                names[agent.name] = where = f"agents[{agent.name}]"
-            normalized = normalize_machine_path(agent.entry_file)
-            if normalized in entries:
-                report(
-                    f"{where}.entry_file",
-                    f"normalizes to the same owner as {entries[normalized]}",
-                )
-            entries[normalized] = where
-            file_exists(f"{where}.entry_file", agent.entry_file)
-            owner = normalize_repo_path(agent.project_instruction_file)
-            if owner in owners:
-                report(
-                    f"{where}.project_instruction_file",
-                    f"normalizes to the same owner as {owners[owner]}",
-                )
-            owners[owner] = where
-            if agent.agent_specific_file is not None:
-                file_exists(f"{where}.agent_specific_file", agent.agent_specific_file)
-        for index, agent in enumerate(self.agents):
-            where = names.get(agent.name, f"agents[{index}]")
-            for surface in agent.readonly_project_surfaces:
-                owner = owners.get(normalize_repo_path(surface))
-                if owner is None:
-                    report(
-                        f"{where}.readonly_project_surfaces",
-                        f"{surface!r} is not another configured agent's project_instruction_file",
-                    )
-                elif owner == where:
-                    report(
-                        f"{where}.readonly_project_surfaces",
-                        f"{surface!r} is this agent's own surface",
-                    )
+        check_shared_sources(self.shared_sources, report, file_exists)
+        names, owners = check_agents(self.agents, report, file_exists)
+        check_readonly_surfaces(self.agents, names, owners, report)
         return self
+
+
+def check_shared_sources(sources: list[SharedSource], report, file_exists) -> None:
+    seen: dict[str, str] = {}
+    for index, source in enumerate(sources):
+        where = f"shared_sources[{index}]"
+        normalized = normalize_machine_path(source.path)
+        if normalized in seen:
+            report(
+                f"{where}.path",
+                f"normalizes to the same file as {seen[normalized]}",
+            )
+        seen[normalized] = where
+        file_exists(f"{where}.path", source.path)
+
+
+def check_agents(
+    agents: list[Agent], report, file_exists
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Report duplicate names and owners; return {name: where} and {owner: where}."""
+    names: dict[str, str] = {}
+    entries: dict[str, str] = {}
+    owners: dict[str, str] = {}
+    for index, agent in enumerate(agents):
+        where = f"agents[{index}]"
+        if agent.name in names:
+            report(f"{where}.name", f"duplicates {names[agent.name]}")
+        else:
+            names[agent.name] = where = f"agents[{agent.name}]"
+        normalized = normalize_machine_path(agent.entry_file)
+        if normalized in entries:
+            report(
+                f"{where}.entry_file",
+                f"normalizes to the same owner as {entries[normalized]}",
+            )
+        entries[normalized] = where
+        file_exists(f"{where}.entry_file", agent.entry_file)
+        owner = normalize_repo_path(agent.project_instruction_file)
+        if owner in owners:
+            report(
+                f"{where}.project_instruction_file",
+                f"normalizes to the same owner as {owners[owner]}",
+            )
+        owners[owner] = where
+        if agent.agent_specific_file is not None:
+            file_exists(f"{where}.agent_specific_file", agent.agent_specific_file)
+    return names, owners
+
+
+def check_readonly_surfaces(
+    agents: list[Agent], names: dict[str, str], owners: dict[str, str], report
+) -> None:
+    for index, agent in enumerate(agents):
+        where = names.get(agent.name, f"agents[{index}]")
+        for surface in agent.readonly_project_surfaces:
+            owner = owners.get(normalize_repo_path(surface))
+            if owner is None:
+                report(
+                    f"{where}.readonly_project_surfaces",
+                    f"{surface!r} is not another configured agent's project_instruction_file",
+                )
+            elif owner == where:
+                report(
+                    f"{where}.readonly_project_surfaces",
+                    f"{surface!r} is this agent's own surface",
+                )
 
 
 # --- error rendering -----------------------------------------------------------
@@ -289,20 +306,26 @@ def render_location(data: object, loc: tuple) -> str:
         if isinstance(key, int):
             if index and loc[index - 1] in STRING_LIST_FIELDS:
                 break  # a list item reports on its list field
-            name = node[key].get("name") if isinstance(node, list) else None
-            label = (
-                name
-                if loc[index - 1] == "agents" and isinstance(name, str) and name.strip()
-                else key
-            )
-            parts[-1] += f"[{label}]"
+            parts[-1] += f"[{item_label(node, loc[index - 1], key)}]"
         else:
             parts.append(str(key))
-        try:
-            node = node[key]  # type: ignore[index]
-        except (KeyError, IndexError, TypeError):
-            node = None
+        node = child(node, key)
     return ".".join(parts) or "(top level)"
+
+
+def item_label(node: object, field: object, key: int) -> object:
+    """An agent's valid name, else the list index."""
+    name = node[key].get("name") if isinstance(node, list) else None
+    if field == "agents" and isinstance(name, str) and name.strip():
+        return name
+    return key
+
+
+def child(node: object, key: object) -> object:
+    try:
+        return node[key]  # type: ignore[index]
+    except (KeyError, IndexError, TypeError):
+        return None
 
 
 class Checker:

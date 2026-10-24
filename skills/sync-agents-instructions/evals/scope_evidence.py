@@ -53,36 +53,51 @@ def check(repo: Path, before: dict, allowed: set[str]) -> list[str]:
             if before[field] != after[field]:
                 errors.append(f"repository {field} changed")
     else:
-        if protected_status(before["status"], allowed) != protected_status(
-            after["status"], allowed
-        ):
-            errors.append("protected Git status changed")
-        base = before["head"]
-        if subprocess.run(
-            ["git", "-C", str(repo), "merge-base", "--is-ancestor", base, "HEAD"],
-            capture_output=True,
-        ).returncode:
-            errors.append("baseline HEAD is no longer an ancestor")
-        else:
-            for commit in git(repo, "rev-list", f"{base}..HEAD").splitlines():
-                # Each commit, including all merge-parent diffs: net reverts cannot hide writes.
-                paths = set(
-                    git(
-                        repo,
-                        "diff-tree",
-                        "--root",
-                        "-m",
-                        "--no-commit-id",
-                        "--name-only",
-                        "-r",
-                        "-z",
-                        commit,
-                    ).split("\0")
-                ) - {""}
-                if paths - allowed:
-                    errors.append(
-                        f"commit {commit} touched protected paths: {sorted(paths - allowed)}"
-                    )
+        errors += scoped_git_errors(repo, before, after, allowed)
+    return errors
+
+
+def scoped_git_errors(
+    repo: Path, before: dict, after: dict, allowed: set[str]
+) -> list[str]:
+    """Git status and commit evidence when some paths may legitimately change."""
+    errors = []
+    if protected_status(before["status"], allowed) != protected_status(
+        after["status"], allowed
+    ):
+        errors.append("protected Git status changed")
+    base = before["head"]
+    if subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", base, "HEAD"],
+        capture_output=True,
+    ).returncode:
+        errors.append("baseline HEAD is no longer an ancestor")
+    else:
+        errors += commit_errors(repo, base, allowed)
+    return errors
+
+
+def commit_errors(repo: Path, base: str, allowed: set[str]) -> list[str]:
+    errors = []
+    for commit in git(repo, "rev-list", f"{base}..HEAD").splitlines():
+        # Each commit, including all merge-parent diffs: net reverts cannot hide writes.
+        paths = set(
+            git(
+                repo,
+                "diff-tree",
+                "--root",
+                "-m",
+                "--no-commit-id",
+                "--name-only",
+                "-r",
+                "-z",
+                commit,
+            ).split("\0")
+        ) - {""}
+        if paths - allowed:
+            errors.append(
+                f"commit {commit} touched protected paths: {sorted(paths - allowed)}"
+            )
     return errors
 
 
