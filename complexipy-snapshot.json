@@ -10,16 +10,6 @@
     ]
   },
   {
-    "path": "skills/codex-subagent-routing/evals/live_check.py",
-    "file_name": "live_check.py",
-    "functions": [
-      {
-        "name": "main",
-        "complexity": 23
-      }
-    ]
-  },
-  {
     "path": "skills/codex-subagent-routing/scripts/usage_report.py",
     "file_name": "usage_report.py",
     "functions": [

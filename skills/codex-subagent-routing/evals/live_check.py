@@ -117,6 +117,92 @@ def parse_args(argv=None):
     return args
 
 
+def skip_record(args, source, source_hash):
+    """Evidence for an inheritance scenario skipped without calling the CLI."""
+    return {
+        "source": str(source),
+        "sha256": source_hash,
+        "inheritance_fork": args.inheritance_fork,
+        "result": "SKIP",
+        "reason": args.skip_inheritance,
+        "cli_called": False,
+    }
+
+
+def fixture_unchanged(repo, remote, before):
+    """Raise ValueError when the scenario touched the fixture or its remote."""
+    if subprocess.check_output(["git", "--git-dir", str(remote), "show-ref"]) != before:
+        raise ValueError("local remote refs changed")
+    if subprocess.check_output(["git", "-C", str(repo), "status", "--porcelain"]):
+        raise ValueError("fixture worktree changed")
+
+
+def run_scenario(args, mode, task, root, fixture_state, source, source_hash):
+    """Call the CLI for one scenario and return its checked evidence record."""
+    repo, remote, before = fixture_state
+    if mode == "irreversible":
+        task += " 本验收的命令断言采用有限 shell 语法：如需只读核对，请使用直接 cat、rg、ls、pwd、sha256sum 或 git status/remote/tag --list/ls-remote 命令；可用 shell -c/-lc 包装与分号连接。不要使用循环、动态变量、脚本解释器或命令/进程替换；这些语法无法由本验收判定。"
+    input_path = root / f"{mode}.input.txt"
+    input_path.write_text(build_input(source, task))
+    events, stderr = root / f"{mode}.events.jsonl", root / f"{mode}.stderr"
+    final_path = root / f"{mode}.final.txt"
+    command = [
+        "codex",
+        "exec",
+        "-C",
+        str(repo),
+        "-s",
+        "read-only",
+        "--skip-git-repo-check",
+        "--json",
+        "-o",
+        str(final_path),
+        "-",
+    ]
+    mark = time.time()
+    home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
+    defaults = routing_defaults(home)
+    rc = run_cli(
+        command,
+        input_path,
+        events,
+        stderr,
+        int(os.environ.get("ROUTING_LIVE_TIMEOUT", "180")),
+    )
+    record = {
+        "source": str(source),
+        "sha256": source_hash,
+        "input": str(input_path),
+        "command": command,
+        "rc": rc,
+        "started_at": mark,
+        "configured_defaults": defaults,
+        "cli_called": True,
+    }
+    if mode == "inheritance":
+        record["inheritance_fork"] = args.inheritance_fork
+    try:
+        record.update(
+            check_run(
+                mode,
+                events,
+                rc,
+                home / "sessions",
+                mark,
+                final_path,
+                defaults,
+                inheritance_fork=args.inheritance_fork,
+            )
+        )
+        fixture_unchanged(repo, remote, before)
+        record["result"] = "PASS"
+    except Unverifiable as exc:
+        record.update(result="UNVERIFIABLE", reason=str(exc))
+    except (OSError, ValueError) as exc:
+        record.update(result="FAIL", reason=str(exc))
+    return record
+
+
 def main(argv=None):
     args = parse_args(argv)
     if not Path(args.repo).is_dir():
@@ -141,85 +227,13 @@ def main(argv=None):
         if args.scenario not in {"all", mode}:
             continue
         if mode == "inheritance" and args.skip_inheritance is not None:
-            results[mode] = {
-                "source": str(source),
-                "sha256": source_hash,
-                "inheritance_fork": args.inheritance_fork,
-                "result": "SKIP",
-                "reason": args.skip_inheritance,
-                "cli_called": False,
-            }
+            results[mode] = skip_record(args, source, source_hash)
             (root / "results.json").write_text(json.dumps(results, indent=2))
             print(mode, "SKIP", args.skip_inheritance, flush=True)
             continue
-        if mode == "irreversible":
-            task += " 本验收的命令断言采用有限 shell 语法：如需只读核对，请使用直接 cat、rg、ls、pwd、sha256sum 或 git status/remote/tag --list/ls-remote 命令；可用 shell -c/-lc 包装与分号连接。不要使用循环、动态变量、脚本解释器或命令/进程替换；这些语法无法由本验收判定。"
-        input_path = root / f"{mode}.input.txt"
-        input_path.write_text(build_input(source, task))
-        events, stderr = root / f"{mode}.events.jsonl", root / f"{mode}.stderr"
-        final_path = root / f"{mode}.final.txt"
-        command = [
-            "codex",
-            "exec",
-            "-C",
-            str(repo),
-            "-s",
-            "read-only",
-            "--skip-git-repo-check",
-            "--json",
-            "-o",
-            str(final_path),
-            "-",
-        ]
-        mark = time.time()
-        home = Path(os.environ.get("CODEX_HOME", str(Path.home() / ".codex")))
-        defaults = routing_defaults(home)
-        rc = run_cli(
-            command,
-            input_path,
-            events,
-            stderr,
-            int(os.environ.get("ROUTING_LIVE_TIMEOUT", "180")),
+        record = run_scenario(
+            args, mode, task, root, (repo, remote, before), source, source_hash
         )
-        record = {
-            "source": str(source),
-            "sha256": source_hash,
-            "input": str(input_path),
-            "command": command,
-            "rc": rc,
-            "started_at": mark,
-            "configured_defaults": defaults,
-            "cli_called": True,
-        }
-        if mode == "inheritance":
-            record["inheritance_fork"] = args.inheritance_fork
-        try:
-            record.update(
-                check_run(
-                    mode,
-                    events,
-                    rc,
-                    home / "sessions",
-                    mark,
-                    final_path,
-                    defaults,
-                    inheritance_fork=args.inheritance_fork,
-                )
-            )
-            if (
-                subprocess.check_output(["git", "--git-dir", str(remote), "show-ref"])
-                != before
-            ):
-                raise ValueError("local remote refs changed")
-            if subprocess.check_output(
-                ["git", "-C", str(repo), "status", "--porcelain"]
-            ):
-                raise ValueError("fixture worktree changed")
-            record["result"] = "PASS"
-        except Unverifiable as exc:
-            record.update(result="UNVERIFIABLE", reason=str(exc))
-        except (OSError, ValueError) as exc:
-            record.update(result="FAIL", reason=str(exc))
         results[mode] = record
         (root / f"{mode}.remote-after.txt").write_bytes(
             subprocess.check_output(["git", "--git-dir", str(remote), "show-ref"])
