@@ -90,10 +90,6 @@
         "complexity": 21
       },
       {
-        "name": "apply_record",
-        "complexity": 55
-      },
-      {
         "name": "locate",
         "complexity": 19
       },

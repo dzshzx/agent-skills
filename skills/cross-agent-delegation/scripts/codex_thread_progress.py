@@ -187,6 +187,83 @@ def add_replies(thread, ts, text):
     return found
 
 
+def _on_task_started(thread, ts, payload):
+    thread.start_turn(payload.get("turn_id"), ts)
+
+
+def _on_task_complete(thread, ts, payload):
+    thread.end_turn(payload.get("turn_id"), ts, "complete")
+
+
+def _on_turn_aborted(thread, ts, payload):
+    reason = payload.get("reason") or "unknown"
+    thread.end_turn(payload.get("turn_id"), ts, f"aborted ({reason})")
+
+
+def _on_user_message(thread, ts, payload):
+    text = payload.get("message")
+    if isinstance(text, str) and text not in thread.seen_user:
+        if not add_replies(thread, ts, text):
+            thread.seen_user.add(text)
+            thread.events.append((ts, "user", text))
+
+
+def _on_item_completed(thread, ts, payload):
+    item = payload.get("item") or {}
+    if isinstance(item, dict) and item.get("type") == "UserMessage":
+        text = "\n".join(texts(item.get("content")))
+        if text and text not in thread.seen_user and not REPLY.search(text):
+            thread.seen_user.add(text)
+            thread.events.append((ts, "user", text))
+
+
+def _on_message(thread, ts, payload):
+    role = payload.get("role")
+    text = "\n".join(texts(payload.get("content")))
+    if role == "assistant" and text:
+        phase = payload.get("phase") or "message"
+        thread.events.append((ts, f"assistant/{phase}", text))
+    elif role == "user" and text:
+        add_replies(thread, ts, text)
+
+
+def _question_lines(qs):
+    lines = []
+    for q in qs:
+        opts = q.get("options") or []
+        lines.append(f"Q: {q.get('title')}")
+        lines += [
+            f"   - {o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)}"
+            for o in opts
+        ]
+    return lines
+
+
+def _on_function_call(thread, ts, payload):
+    if payload.get("name") != "request_user_input_async":
+        return
+    try:
+        args = json.loads(payload.get("arguments") or "{}")
+    except ValueError:
+        args = {}
+    qs = args.get("questions") if isinstance(args, dict) else None
+    qs = [q for q in qs if isinstance(q, dict)] if isinstance(qs, list) else []
+    thread.questions[payload.get("call_id")] = (ts, qs)
+    thread.events.append((ts, "question", "\n".join(_question_lines(qs))))
+
+
+# (record type, payload type) -> handler(thread, ts, payload)
+RECORD_HANDLERS = {
+    ("event_msg", "task_started"): _on_task_started,
+    ("event_msg", "task_complete"): _on_task_complete,
+    ("event_msg", "turn_aborted"): _on_turn_aborted,
+    ("event_msg", "user_message"): _on_user_message,
+    ("event_msg", "item_completed"): _on_item_completed,
+    ("response_item", "message"): _on_message,
+    ("response_item", "function_call"): _on_function_call,
+}
+
+
 def apply_record(thread, record):
     ts = parse_ts(record.get("timestamp"))
     payload = record.get("payload")
@@ -195,56 +272,12 @@ def apply_record(thread, record):
         thread.last = ts
     if not isinstance(payload, dict):
         return
-    kind, ptype = record.get("type"), payload.get("type")
-    if kind == "event_msg" and ptype == "task_started":
-        thread.start_turn(payload.get("turn_id"), ts)
-    elif kind == "event_msg" and ptype == "task_complete":
-        thread.end_turn(payload.get("turn_id"), ts, "complete")
-    elif kind == "event_msg" and ptype == "turn_aborted":
-        reason = payload.get("reason") or "unknown"
-        thread.end_turn(payload.get("turn_id"), ts, f"aborted ({reason})")
-    elif kind == "event_msg" and ptype == "user_message":
-        text = payload.get("message")
-        if isinstance(text, str) and text not in thread.seen_user:
-            if not add_replies(thread, ts, text):
-                thread.seen_user.add(text)
-                thread.events.append((ts, "user", text))
-    elif kind == "event_msg" and ptype == "item_completed":
-        item = payload.get("item") or {}
-        if isinstance(item, dict) and item.get("type") == "UserMessage":
-            text = "\n".join(texts(item.get("content")))
-            if text and text not in thread.seen_user and not REPLY.search(text):
-                thread.seen_user.add(text)
-                thread.events.append((ts, "user", text))
-    elif kind == "response_item" and ptype == "message":
-        role = payload.get("role")
-        text = "\n".join(texts(payload.get("content")))
-        if role == "assistant" and text:
-            phase = payload.get("phase") or "message"
-            thread.events.append((ts, f"assistant/{phase}", text))
-        elif role == "user" and text:
-            add_replies(thread, ts, text)
-    elif (
-        kind == "response_item"
-        and ptype == "function_call"
-        and payload.get("name") == "request_user_input_async"
-    ):
-        try:
-            args = json.loads(payload.get("arguments") or "{}")
-        except ValueError:
-            args = {}
-        qs = args.get("questions") if isinstance(args, dict) else None
-        qs = [q for q in qs if isinstance(q, dict)] if isinstance(qs, list) else []
-        thread.questions[payload.get("call_id")] = (ts, qs)
-        lines = []
-        for q in qs:
-            opts = q.get("options") or []
-            lines.append(f"Q: {q.get('title')}")
-            lines += [
-                f"   - {o if isinstance(o, str) else json.dumps(o, ensure_ascii=False)}"
-                for o in opts
-            ]
-        thread.events.append((ts, "question", "\n".join(lines)))
+    key = (record.get("type"), payload.get("type"))
+    if not all(isinstance(k, str) for k in key):
+        return  # non-string types (lists, objects) match no handler and are skipped
+    handler = RECORD_HANDLERS.get(key)
+    if handler is not None:
+        handler(thread, ts, payload)
 
 
 def read_new(thread, eof=False):

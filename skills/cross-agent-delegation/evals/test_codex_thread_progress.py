@@ -394,6 +394,17 @@ class CodexThreadProgressTest(unittest.TestCase):
         self.assertIn("b", thread.turns)
         self.assertEqual(thread.offset, root.stat().st_size)
 
+    def test_unhashable_record_types_are_ignored(self):
+        thread = progress.Thread(path=self.home / "unused.jsonl")
+        records = [
+            {"type": ["event_msg"], "payload": {"type": "task_started"}},
+            {"type": "event_msg", "payload": {"type": {"a": 1}}},
+            {"type": {"a": 1}, "payload": {"type": ["message"]}},
+        ]
+        for record in records:
+            progress.apply_record(thread, record)
+        self.assertEqual(thread, progress.Thread(path=self.home / "unused.jsonl"))
+
 
 if __name__ == "__main__":
     unittest.main()

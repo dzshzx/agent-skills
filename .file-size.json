@@ -22,7 +22,6 @@
     "skills/codex-subagent-routing/scripts/usage_report.py::report": "存量，待整改",
     "skills/cross-agent-delegation/evals/fake_codex_daemon.py::main": "存量，待整改",
     "skills/cross-agent-delegation/scripts/codex_thread_progress.py::add_replies": "存量，待整改",
-    "skills/cross-agent-delegation/scripts/codex_thread_progress.py::apply_record": "存量，待整改",
     "skills/cross-agent-delegation/scripts/codex_thread_progress.py::locate": "存量，待整改",
     "skills/cross-agent-delegation/scripts/codex_thread_progress.py::main": "存量，待整改",
     "skills/cross-agent-delegation/scripts/codex_thread_turn.py::run": "存量，待整改",
