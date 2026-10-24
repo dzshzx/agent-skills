@@ -394,7 +394,8 @@ def summarize(tid, node, since=None, until=None, prices=None):
     }
 
 
-def report(threads, thread=None, since=None, until=None, prices=None):
+def report_threads(threads, thread):
+    """The requested thread (or all) followed by every descendant thread."""
     wanted = list(threads) if thread is None else [thread]
     if thread and thread not in threads:
         raise ValueError("requested thread not found")
@@ -404,13 +405,28 @@ def report(threads, thread=None, since=None, until=None, prices=None):
             for t, n in threads.items()
             if t not in wanted and parent_thread_id(n["meta"]) == tid
         )
+    return wanted
+
+
+def elapsed_seconds(result):
+    """Seconds from the first to the last event across threads, or None."""
+    moments = [
+        timestamp(r[k]) for r in result for k in ("first_event", "last_event") if r[k]
+    ]
+    return (max(moments) - min(moments)).total_seconds() if moments else None
+
+
+def total_cost(result, subtotal):
+    """The subtotal only when every reported thread has a known cost."""
+    return subtotal if result and all(r["cost"] is not None for r in result) else None
+
+
+def report(threads, thread=None, since=None, until=None, prices=None):
+    wanted = report_threads(threads, thread)
     result = [summarize(t, threads[t], since, until, prices) for t in wanted]
     if thread is None:
         result = [r for r in result if r["first_event"] is not None]
     subtotal = sum(r["known_cost_subtotal"] for r in result)
-    moments = [
-        timestamp(r[k]) for r in result for k in ("first_event", "last_event") if r[k]
-    ]
     return {
         "schema_version": 1,
         "scope": {
@@ -425,13 +441,9 @@ def report(threads, thread=None, since=None, until=None, prices=None):
             for k in ("input_tokens", "cached_input_tokens", "output_tokens")
         },
         "observed_responses": sum(r["observed_responses"] for r in result),
-        "elapsed_seconds": (max(moments) - min(moments)).total_seconds()
-        if moments
-        else None,
+        "elapsed_seconds": elapsed_seconds(result),
         "known_cost_subtotal": subtotal,
-        "cost": subtotal
-        if result and all(r["cost"] is not None for r in result)
-        else None,
+        "cost": total_cost(result, subtotal),
         "limitations": [
             "Completed response observations are not all HTTP requests.",
             "First input is not pure history; parent cost is not pure coordination.",
@@ -439,6 +451,22 @@ def report(threads, thread=None, since=None, until=None, prices=None):
             "Historical accounting does not establish policy savings.",
         ],
     }
+
+
+def check_prices(parser, prices):
+    """Reject incomplete price input or rates that are not non-negative numbers."""
+    for key in ("as_of", "currency", "source", "rates"):
+        if not prices.get(key):
+            parser.error(f"price input requires {key}")
+    datetime.strptime(prices["as_of"], "%Y-%m-%d")
+    for rate in prices["rates"]:
+        for key in (
+            "input_per_million",
+            "cached_input_per_million",
+            "output_per_million",
+        ):
+            if not isinstance(rate.get(key), (int, float)) or rate[key] < 0:
+                parser.error(f"invalid price: {key}")
 
 
 def main():
@@ -452,18 +480,7 @@ def main():
     args = parser.parse_args()
     prices = json.loads(args.prices.read_text()) if args.prices else None
     if prices:
-        for key in ("as_of", "currency", "source", "rates"):
-            if not prices.get(key):
-                parser.error(f"price input requires {key}")
-        datetime.strptime(prices["as_of"], "%Y-%m-%d")
-        for rate in prices["rates"]:
-            for key in (
-                "input_per_million",
-                "cached_input_per_million",
-                "output_per_million",
-            ):
-                if not isinstance(rate.get(key), (int, float)) or rate[key] < 0:
-                    parser.error(f"invalid price: {key}")
+        check_prices(parser, prices)
     if args.since and args.until and args.since >= args.until:
         parser.error("--since must precede --until")
     result = report(

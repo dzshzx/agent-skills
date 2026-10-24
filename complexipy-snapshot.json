@@ -10,20 +10,6 @@
     ]
   },
   {
-    "path": "skills/codex-subagent-routing/scripts/usage_report.py",
-    "file_name": "usage_report.py",
-    "functions": [
-      {
-        "name": "main",
-        "complexity": 20
-      },
-      {
-        "name": "report",
-        "complexity": 26
-      }
-    ]
-  },
-  {
     "path": "skills/sync-agents-instructions/evals/call_evidence.py",
     "file_name": "call_evidence.py",
     "functions": [
