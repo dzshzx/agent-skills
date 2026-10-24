@@ -41,6 +41,39 @@ def routing_defaults(home):
     return result
 
 
+def named_option(arg, args, flags, values):
+    """Match a complete option name, consuming the value a value option takes."""
+    if arg in flags:
+        # An option in both flags and values has an optional =value only.
+        return {arg}
+    if arg in values:
+        if next(args, None) is None:
+            raise Unverifiable("missing option argument: " + arg)
+        return {arg}
+    return None
+
+
+def equals_option(arg, values, equals_only):
+    """Name a complete --name=value option; None when arg is not one."""
+    name, sep, _ = arg.partition("=")
+    if arg.startswith("--") and sep and (name in values or name in equals_only):
+        return {name}
+    return None
+
+
+def short_options(arg, short_flags, attached, counts):
+    """Expand a bundled, attached-value or numeric short option; else None."""
+    if not arg.startswith("-") or arg.startswith("--") or len(arg) < 2:
+        return None
+    if all(c in short_flags for c in arg[1:]):
+        return {"-" + c for c in arg[1:]}
+    if len(arg) > 2 and arg[1] in attached:
+        return {arg[:2]}
+    if counts and arg[1:].isdigit():
+        return {arg}
+    return None
+
+
 def read_options(
     args, flags=(), values=(), short_flags="", attached="", counts=False, equals_only=()
 ):
@@ -51,32 +84,14 @@ def read_options(
         if arg == "--":
             operands.extend(args)
             break
-        if arg in flags:
-            # An option in both flags and values has an optional =value only.
-            options.add(arg)
+        matched = (
+            named_option(arg, args, flags, values)
+            or equals_option(arg, values, equals_only)
+            or short_options(arg, short_flags, attached, counts)
+        )
+        if matched:
+            options.update(matched)
             continue
-        if arg in values:
-            if next(args, None) is None:
-                raise Unverifiable("missing option argument: " + arg)
-            options.add(arg)
-            continue
-        if (
-            arg.startswith("--")
-            and "=" in arg
-            and (arg.split("=", 1)[0] in values or arg.split("=", 1)[0] in equals_only)
-        ):
-            options.add(arg.split("=", 1)[0])
-            continue
-        if arg.startswith("-") and not arg.startswith("--") and len(arg) > 1:
-            if all(c in short_flags for c in arg[1:]):
-                options.update("-" + c for c in arg[1:])
-                continue
-            if len(arg) > 2 and arg[1] in attached:
-                options.add(arg[:2])
-                continue
-            if counts and arg[1:].isdigit():
-                options.add(arg)
-                continue
         if arg.startswith("-") and arg != "-":
             raise Unverifiable("unsupported command option: " + arg)
         operands.append(arg)
@@ -473,6 +488,28 @@ def read_rows(path):
     return rows
 
 
+def is_answer(event):
+    item = event.get("item", {})
+    return (
+        event.get("type") == "item.completed"
+        and item.get("type") == "agent_message"
+        and item.get("phase") != "commentary"
+    )
+
+
+def is_command(event):
+    item = event.get("item", {})
+    return item.get("type") == "command_execution" and "command" in item
+
+
+def check_final_answer(events, final_text):
+    answers = [e.get("item", {}).get("text") for e in events if is_answer(e)]
+    if not any(isinstance(a, str) and a.strip() for a in answers):
+        raise Unverifiable("missing final answer")
+    if not final_text.strip() or final_text.strip() != answers[-1].strip():
+        raise Unverifiable("missing/mismatched output-last-message final answer")
+
+
 def event_summary(events, rc, final_text):
     if rc != 0:
         raise Unverifiable(f"CLI exit {rc} (124 means timeout)")
@@ -481,27 +518,11 @@ def event_summary(events, rc, final_text):
         raise Unverifiable("failure terminal/event")
     if not events or events[-1].get("type") != "turn.completed":
         raise Unverifiable("missing successful terminal event")
-    answers = [
-        e.get("item", {}).get("text")
-        for e in events
-        if e.get("type") == "item.completed"
-        and e.get("item", {}).get("type") == "agent_message"
-        and e.get("item", {}).get("phase") != "commentary"
-    ]
-    if not any(isinstance(a, str) and a.strip() for a in answers):
-        raise Unverifiable("missing final answer")
-    if not final_text.strip() or final_text.strip() != answers[-1].strip():
-        raise Unverifiable("missing/mismatched output-last-message final answer")
+    check_final_answer(events, final_text)
     threads = {e.get("thread_id") for e in events if e.get("type") == "thread.started"}
     if len(threads) != 1 or None in threads:
         raise Unverifiable("missing/ambiguous parent thread")
-    commands = [
-        e["item"]["command"]
-        for e in events
-        if e.get("item", {}).get("type") == "command_execution"
-        and "command" in e["item"]
-    ]
-    return threads.pop(), commands
+    return threads.pop(), [e["item"]["command"] for e in events if is_command(e)]
 
 
 def as_dict(value):
@@ -874,11 +895,8 @@ def check_tree(
     return tree
 
 
-def check_run(
-    mode, events, rc, sessions, mark, final_path, defaults=None, inheritance_fork="all"
-):
-    final_text = Path(final_path).read_text() if Path(final_path).exists() else ""
-    thread_id, commands = event_summary(read_rows(events), rc, final_text)
+def index_candidates(sessions, mark):
+    """Group rollouts written since mark by their session_meta thread id."""
     candidates = {}
     for path in Path(sessions).rglob("rollout-*.jsonl"):
         if path.stat().st_mtime < mark - 5:
@@ -897,6 +915,11 @@ def check_run(
             continue
         tid = meta.get("id")
         candidates.setdefault(tid, []).append({"meta": meta, "file": str(path)})
+    return candidates
+
+
+def linked_nodes(thread_id, candidates):
+    """Read the unique rollout of thread_id and of each descendant thread."""
     wanted = [thread_id]
     for cur in wanted:
         wanted.extend(
@@ -913,6 +936,15 @@ def check_run(
                 f"missing/duplicate rollout {tid}: {[n['file'] for n in group]}"
             )
         nodes[tid] = read_node(group[0]["file"])
+    return nodes
+
+
+def check_run(
+    mode, events, rc, sessions, mark, final_path, defaults=None, inheritance_fork="all"
+):
+    final_text = Path(final_path).read_text() if Path(final_path).exists() else ""
+    thread_id, commands = event_summary(read_rows(events), rc, final_text)
+    nodes = linked_nodes(thread_id, index_candidates(sessions, mark))
     tree = check_tree(
         mode,
         thread_id,

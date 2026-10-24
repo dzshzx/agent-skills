@@ -10,24 +10,6 @@
     ]
   },
   {
-    "path": "skills/codex-subagent-routing/evals/check_logs.py",
-    "file_name": "check_logs.py",
-    "functions": [
-      {
-        "name": "check_run",
-        "complexity": 17
-      },
-      {
-        "name": "event_summary",
-        "complexity": 18
-      },
-      {
-        "name": "read_options",
-        "complexity": 38
-      }
-    ]
-  },
-  {
     "path": "skills/codex-subagent-routing/evals/live_check.py",
     "file_name": "live_check.py",
     "functions": [
