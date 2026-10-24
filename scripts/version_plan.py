@@ -114,30 +114,13 @@ def build_plan(
     excluded_tag_names: set[str] | None = None,
 ) -> dict[str, object]:
     excluded_tag_names = set(excluded_tag_names or set())
-    for namespace, target in targets.items():
-        tag_name = f"{namespace}{target}"
-        if tag_name in tag_names and tag_name not in excluded_tag_names:
-            raise PlanError(
-                f"tag {tag_name!r} is already published; published tags are not moved "
-                "or reused, use the next patch"
-            )
+    reject_published_targets(targets, tag_names, excluded_tag_names)
     excluded_tag_names.update(
         f"{namespace}{target}" for namespace, target in targets.items()
     )
     versions: list[dict[str, str]] = []
     for namespace, target in sorted(targets.items()):
-        candidates: list[Version] = []
-        for tag_name in tag_names:
-            if tag_name in excluded_tag_names or not tag_name.startswith(namespace):
-                continue
-            suffix = tag_name[len(namespace) :]
-            if is_release_version(suffix):
-                candidates.append(parse_version(suffix))
-        if not candidates:
-            raise PlanError(
-                f"baseline for namespace {namespace!r} is unknown after excluding the current tag"
-            )
-        baseline = max(candidates)
+        baseline = namespace_baseline(namespace, tag_names, excluded_tag_names)
         if target < baseline:
             raise PlanError(
                 f"downgrade is not allowed for {namespace!r}: {baseline} -> {target}"
@@ -146,6 +129,37 @@ def build_plan(
             {"namespace": namespace, "baseline": str(baseline), "target": str(target)}
         )
     return {"schema": 1, "repository": repository, "versions": versions}
+
+
+def reject_published_targets(
+    targets: dict[str, Version], tag_names: set[str], excluded_tag_names: set[str]
+) -> None:
+    """Published tags are never moved or reused; only excluded tags may match."""
+    for namespace, target in targets.items():
+        tag_name = f"{namespace}{target}"
+        if tag_name in tag_names and tag_name not in excluded_tag_names:
+            raise PlanError(
+                f"tag {tag_name!r} is already published; published tags are not moved "
+                "or reused, use the next patch"
+            )
+
+
+def namespace_baseline(
+    namespace: str, tag_names: set[str], excluded_tag_names: set[str]
+) -> Version:
+    """Highest release version tagged in ``namespace``, ignoring excluded tags."""
+    candidates: list[Version] = []
+    for tag_name in tag_names:
+        if tag_name in excluded_tag_names or not tag_name.startswith(namespace):
+            continue
+        suffix = tag_name[len(namespace) :]
+        if is_release_version(suffix):
+            candidates.append(parse_version(suffix))
+    if not candidates:
+        raise PlanError(
+            f"baseline for namespace {namespace!r} is unknown after excluding the current tag"
+        )
+    return max(candidates)
 
 
 def canonical_json(plan: dict[str, object]) -> str:

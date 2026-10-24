@@ -59,60 +59,82 @@ def validate() -> list[str]:
         errors.append("skills/: no skill directories found")
 
     for skill_dir in skill_dirs:
-        skill_file = skill_dir / "SKILL.md"
-        if not skill_file.is_file():
-            errors.append(f"{skill_dir.relative_to(ROOT)}: missing SKILL.md")
+        errors.extend(validate_skill(skill_dir))
+
+    errors.extend(validate_readme_inventory(names))
+    errors.extend(validate_shipped_files())
+    return errors
+
+
+def validate_skill(skill_dir: Path) -> list[str]:
+    """Check one skill directory: required files, frontmatter, paths and links."""
+    errors: list[str] = []
+    skill_file = skill_dir / "SKILL.md"
+    if not skill_file.is_file():
+        return [f"{skill_dir.relative_to(ROOT)}: missing SKILL.md"]
+    if not (skill_dir / "evals" / "live-check.sh").is_file():
+        errors.append(
+            f"{skill_dir.relative_to(ROOT)}: missing evals/live-check.sh "
+            "(every skill ships a real-harness check; scripts/verify.sh runs it)"
+        )
+
+    try:
+        fields = frontmatter(skill_file)
+    except ValueError as error:
+        errors.append(f"{skill_file.relative_to(ROOT)}: {error}")
+        return errors
+
+    errors.extend(validate_frontmatter_fields(skill_dir, skill_file, fields))
+    text = skill_file.read_text(encoding="utf-8")
+    errors.extend(validate_skill_text(skill_dir, skill_file, text))
+    return errors
+
+
+def validate_frontmatter_fields(
+    skill_dir: Path, skill_file: Path, fields: dict[str, str]
+) -> list[str]:
+    errors: list[str] = []
+    name = fields.get("name", "")
+    description = fields.get("description", "")
+    if name != skill_dir.name:
+        errors.append(
+            f"{skill_file.relative_to(ROOT)}: name {name!r} must match directory {skill_dir.name!r}"
+        )
+    if not NAME_PATTERN.fullmatch(name):
+        errors.append(f"{skill_file.relative_to(ROOT)}: invalid skill name {name!r}")
+    if not description:
+        errors.append(f"{skill_file.relative_to(ROOT)}: description must not be empty")
+    return errors
+
+
+def validate_skill_text(skill_dir: Path, skill_file: Path, text: str) -> list[str]:
+    """Reject machine-specific home paths and broken relative links in SKILL.md."""
+    errors: list[str] = []
+    if match := MACHINE_HOME_PATTERN.search(text):
+        errors.append(
+            f"{skill_file.relative_to(ROOT)}: machine-specific home path {match.group(0)!r}"
+        )
+
+    for target in LINK_PATTERN.findall(text):
+        target = target.split("#", 1)[0]
+        if not target or "://" in target or target.startswith("mailto:"):
             continue
-        if not (skill_dir / "evals" / "live-check.sh").is_file():
+        if not (skill_dir / target).resolve().exists():
             errors.append(
-                f"{skill_dir.relative_to(ROOT)}: missing evals/live-check.sh "
-                "(every skill ships a real-harness check; scripts/verify.sh runs it)"
+                f"{skill_file.relative_to(ROOT)}: missing relative link target {target!r}"
             )
+    return errors
 
-        try:
-            fields = frontmatter(skill_file)
-        except ValueError as error:
-            errors.append(f"{skill_file.relative_to(ROOT)}: {error}")
-            continue
 
-        name = fields.get("name", "")
-        description = fields.get("description", "")
-        if name != skill_dir.name:
-            errors.append(
-                f"{skill_file.relative_to(ROOT)}: name {name!r} must match directory {skill_dir.name!r}"
-            )
-        if not NAME_PATTERN.fullmatch(name):
-            errors.append(
-                f"{skill_file.relative_to(ROOT)}: invalid skill name {name!r}"
-            )
-        if not description:
-            errors.append(
-                f"{skill_file.relative_to(ROOT)}: description must not be empty"
-            )
-
-        text = skill_file.read_text(encoding="utf-8")
-        if match := MACHINE_HOME_PATTERN.search(text):
-            errors.append(
-                f"{skill_file.relative_to(ROOT)}: machine-specific home path {match.group(0)!r}"
-            )
-
-        for target in LINK_PATTERN.findall(text):
-            target = target.split("#", 1)[0]
-            if not target or "://" in target or target.startswith("mailto:"):
-                continue
-            if not (skill_dir / target).resolve().exists():
-                errors.append(
-                    f"{skill_file.relative_to(ROOT)}: missing relative link target {target!r}"
-                )
-
+def validate_readme_inventory(names: set[str]) -> list[str]:
+    """The README skill table must link exactly the skill directories that exist."""
+    errors: list[str] = []
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     documented = set(README_SKILL_LINK_PATTERN.findall(readme))
     for name in sorted(names - documented):
         errors.append(f"README.md: missing skill table link for {name!r}")
     for name in sorted(documented - names):
         errors.append(f"README.md: documents nonexistent skill {name!r}")
-
-    errors.extend(validate_shipped_files())
     return errors
 
 

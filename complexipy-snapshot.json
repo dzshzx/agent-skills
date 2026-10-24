@@ -10,26 +10,6 @@
     ]
   },
   {
-    "path": "scripts/validate_repository.py",
-    "file_name": "validate_repository.py",
-    "functions": [
-      {
-        "name": "validate",
-        "complexity": 30
-      }
-    ]
-  },
-  {
-    "path": "scripts/version_plan.py",
-    "file_name": "version_plan.py",
-    "functions": [
-      {
-        "name": "build_plan",
-        "complexity": 20
-      }
-    ]
-  },
-  {
     "path": "skills/codex-subagent-routing/evals/check_logs.py",
     "file_name": "check_logs.py",
     "functions": [
