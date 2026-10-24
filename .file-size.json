@@ -1,9 +1,5 @@
 {
   "oversize": {
-    "skills/codex-subagent-routing/evals/test_check_logs.py": {
-      "bytes": 39517,
-      "reason": "存量，待整改"
-    },
     "skills/cross-agent-delegation/evals/live-check.sh": {
       "bytes": 33732,
       "reason": "存量，待整改"
