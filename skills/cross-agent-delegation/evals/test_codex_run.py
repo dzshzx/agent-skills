@@ -140,7 +140,8 @@ class CliSelectionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
 
     def test_retry_exhaustion_cannot_report_success(self):
-        script = self.script.read_text()
+        # cx 随 smoke 档拆在 live-check-smoke.sh，由 live-check.sh 在 --smoke 时 source。
+        script = self.script.with_name("live-check-smoke.sh").read_text()
         # 按结构截取 cx 函数（至下一条 `# cerr` 注释），不依赖缩进与花括号前的空格。
         wrapper = re.search(
             r"^[ \t]*cx\(\)\s*\{.*?(?=^[ \t]*# cerr)", script, re.M | re.S

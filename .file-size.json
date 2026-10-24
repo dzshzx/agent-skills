@@ -1,10 +1,5 @@
 {
-  "oversize": {
-    "skills/cross-agent-delegation/evals/live-check.sh": {
-      "bytes": 33732,
-      "reason": "存量，待整改"
-    }
-  },
+  "oversize": {},
   "exclude": [],
   "complexity": {
     "scripts/tests/test_ci_evidence.py::ReuseEvidenceTest::test_only_trusted_complete_exact_sha_runs_are_reused": "存量，待整改",
