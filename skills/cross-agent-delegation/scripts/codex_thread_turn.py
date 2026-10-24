@@ -61,6 +61,27 @@ class Connection:
         return json.loads(await self.ws.recv())
 
 
+def final_answer(item, final):
+    """The final answer after item: its text if it is a non-commentary agent message."""
+    if item.get("type") == "agentMessage" and item.get("phase") != "commentary":
+        return item.get("text")
+    return final
+
+
+def turn_outcome(turn_id, turn, final):
+    """(exit code, final answer) for a turn/completed notification."""
+    if turn.get("status") != "completed":
+        print(
+            f"turn {turn_id} ended {turn.get('status')}: {turn.get('error')}",
+            file=sys.stderr,
+        )
+        return 1, final
+    if not final:
+        print(f"turn {turn_id} completed without a final answer", file=sys.stderr)
+        return 1, None
+    return 0, final
+
+
 async def wait_for_turn(conn, turn_id):
     final = None
     while True:
@@ -76,26 +97,32 @@ async def wait_for_turn(conn, turn_id):
             )
             return 5, None
         if method == "item/completed":
-            item = params.get("item") or {}
-            if item.get("type") == "agentMessage" and item.get("phase") != "commentary":
-                final = item.get("text")
+            final = final_answer(params.get("item") or {}, final)
         elif (
             method == "turn/completed"
             and (params.get("turn") or {}).get("id") == turn_id
         ):
-            turn = params["turn"]
-            if turn.get("status") != "completed":
-                print(
-                    f"turn {turn_id} ended {turn.get('status')}: {turn.get('error')}",
-                    file=sys.stderr,
-                )
-                return 1, final
-            if not final:
-                print(
-                    f"turn {turn_id} completed without a final answer", file=sys.stderr
-                )
-                return 1, None
-            return 0, final
+            return turn_outcome(turn_id, params["turn"], final)
+
+
+def send_plan(thread, steer):
+    """How to send the brief to thread: (None, method, turn id to steer or None).
+
+    When the thread cannot take it: (exit code, reason, None).
+    """
+    status = (thread.get("status") or {}).get("type")
+    if status == "systemError":
+        return 1, "thread is in systemError; check it in the Codex app", None
+    if not steer:
+        if status != "idle":
+            return 4, f"thread status is {status}; send only to an idle thread", None
+        return None, "turn/start", None
+    if status != "active":
+        return 1, f"thread status is {status}; --steer needs a running turn", None
+    running = [t for t in thread.get("turns", []) if t.get("status") == "inProgress"]
+    if not running:
+        return 1, "no in-progress turn found to steer", None
+    return None, "turn/steer", running[-1]["id"]
 
 
 async def run(args):
@@ -128,36 +155,13 @@ async def run(args):
                 {"threadId": args.thread_id, "includeTurns": bool(args.steer)},
             )
         )["thread"]
-        status = (thread.get("status") or {}).get("type")
-        if status == "systemError":
-            print(
-                "thread is in systemError; check it in the Codex app", file=sys.stderr
-            )
-            return 1
+        code, method, steer_turn = send_plan(thread, args.steer)
+        if code is not None:
+            print(method, file=sys.stderr)
+            return code
         params = {"threadId": args.thread_id, "input": [{"type": "text", "text": text}]}
         if args.steer:
-            if status != "active":
-                print(
-                    f"thread status is {status}; --steer needs a running turn",
-                    file=sys.stderr,
-                )
-                return 1
-            running = [
-                t for t in thread.get("turns", []) if t.get("status") == "inProgress"
-            ]
-            if not running:
-                print("no in-progress turn found to steer", file=sys.stderr)
-                return 1
-            method = "turn/steer"
-            params["expectedTurnId"] = running[-1]["id"]
-        elif status != "idle":
-            print(
-                f"thread status is {status}; send only to an idle thread",
-                file=sys.stderr,
-            )
-            return 4
-        else:
-            method = "turn/start"
+            params["expectedTurnId"] = steer_turn
         if args.wait:
             # Sending a turn alone does not subscribe this connection to the thread's events.
             await conn.call(

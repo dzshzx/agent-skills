@@ -155,6 +155,28 @@ class Thread:
         return out
 
 
+def _note_reply(thread, ts, reply):
+    """Mark the question reply answers and log it once."""
+    try:
+        item = json.loads(reply.get("questionItemId") or "null")
+        if isinstance(item, list) and len(item) > 1:
+            thread.answered.add(item[1])
+    except (TypeError, ValueError):
+        pass
+    thread.answered_titles.add(reply.get("question"))
+    key = (
+        reply.get("questionItemId"),
+        reply.get("question"),
+        reply.get("answer"),
+    )
+    if key in thread.seen_replies:
+        return
+    thread.seen_replies.add(key)
+    thread.events.append(
+        (ts, "answer", f"Q: {reply.get('question')}\nA: {reply.get('answer')}")
+    )
+
+
 def add_replies(thread, ts, text):
     found = False
     for match in REPLY.finditer(text):
@@ -164,26 +186,8 @@ def add_replies(thread, ts, text):
         except ValueError:
             continue
         for reply in replies if isinstance(replies, list) else []:
-            if not isinstance(reply, dict):
-                continue
-            try:
-                item = json.loads(reply.get("questionItemId") or "null")
-                if isinstance(item, list) and len(item) > 1:
-                    thread.answered.add(item[1])
-            except (TypeError, ValueError):
-                pass
-            thread.answered_titles.add(reply.get("question"))
-            key = (
-                reply.get("questionItemId"),
-                reply.get("question"),
-                reply.get("answer"),
-            )
-            if key in thread.seen_replies:
-                continue
-            thread.seen_replies.add(key)
-            thread.events.append(
-                (ts, "answer", f"Q: {reply.get('question')}\nA: {reply.get('answer')}")
-            )
+            if isinstance(reply, dict):
+                _note_reply(thread, ts, reply)
     return found
 
 
@@ -312,6 +316,19 @@ def parse_thread(path, eof=True):
 ROLLOUT_STAMP = re.compile(r"rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})")
 
 
+def _spawn_record(path):
+    """(thread id, thread_spawn dict) from a rollout's session_meta, or None if it has none."""
+    meta = next(read_records(path), {})
+    payload = meta.get("payload")
+    if not isinstance(payload, dict) or meta.get("type") != "session_meta":
+        return None
+    source = payload.get("source")
+    # Review subagents record `subagent` as a bare string such as "review".
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    spawn = (subagent.get("thread_spawn") or {}) if isinstance(subagent, dict) else {}
+    return (payload.get("id"), spawn) if isinstance(spawn, dict) else None
+
+
 def locate(home, thread_id):
     sessions = home / "sessions"
     hits = sorted(sessions.glob(f"**/rollout-*-{thread_id}.jsonl"))
@@ -328,19 +345,11 @@ def locate(home, thread_id):
         m = ROLLOUT_STAMP.search(path.name)
         if m and m[1] < stamp:
             continue
-        meta = next(read_records(path), {})
-        payload = meta.get("payload")
-        if not isinstance(payload, dict) or meta.get("type") != "session_meta":
-            continue
-        source = payload.get("source")
-        # Review subagents record `subagent` as a bare string such as "review".
-        subagent = source.get("subagent") if isinstance(source, dict) else None
-        spawn = (
-            (subagent.get("thread_spawn") or {}) if isinstance(subagent, dict) else {}
-        )
-        if isinstance(spawn, dict) and spawn.get("parent_thread_id") in known:
-            known.add(payload.get("id"))
-            children.append((spawn.get("agent_path") or payload.get("id"), path))
+        record = _spawn_record(path)
+        if record is not None and record[1].get("parent_thread_id") in known:
+            child_id, spawn = record
+            known.add(child_id)
+            children.append((spawn.get("agent_path") or child_id, path))
     return root, children
 
 
@@ -414,7 +423,7 @@ def report(thread_id, root, children, since, status_file, turn_id=None):
     return "\n".join(out)
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -436,6 +445,38 @@ def main():
     parser.add_argument(
         "--interval", type=float, default=30, help="--wait poll seconds (default 30)"
     )
+    return parser
+
+
+def turn_ended(thread, awaited, ended_at_start):
+    """Whether the awaited turn (else the latest) has ended and was not among ended_at_start."""
+    turn_id, turn = (awaited, thread.turns.get(awaited)) if awaited else thread.latest
+    return turn is not None and turn.done and turn_id not in ended_at_start
+
+
+def wait_code(root, args):
+    """Poll root's rollout until the awaited state holds or --timeout passes; return the exit code."""
+    # --turn counts a turn that had already ended; otherwise the latest turn must end after start.
+    ended_at_start = (
+        set() if args.turn else {k for k, t in root.turns.items() if t.done}
+    )
+
+    deadline = time.monotonic() + args.timeout
+    while True:
+        if args.wait in ("question", "any") and root.unanswered():
+            return 3
+        if args.wait in ("complete", "any") and turn_ended(
+            root, args.turn, ended_at_start
+        ):
+            return 0
+        if time.monotonic() >= deadline:
+            return 124
+        time.sleep(min(args.interval, max(0.0, deadline - time.monotonic())))
+        read_new(root)
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
     if args.turn:
         if args.wait == "question":
@@ -463,30 +504,7 @@ def main():
         print(report(args.thread_id, root, children, since, args.status_file))
         return 0
 
-    # --turn counts a turn that had already ended; otherwise the latest turn must end after start.
-    ended_at_start = (
-        set() if args.turn else {k for k, t in root.turns.items() if t.done}
-    )
-
-    def turn_ended(thread):
-        turn_id, turn = (
-            (args.turn, thread.turns.get(args.turn)) if args.turn else thread.latest
-        )
-        return turn is not None and turn.done and turn_id not in ended_at_start
-
-    deadline = time.monotonic() + args.timeout
-    while True:
-        if args.wait in ("question", "any") and root.unanswered():
-            code = 3
-        elif args.wait in ("complete", "any") and turn_ended(root):
-            code = 0
-        elif time.monotonic() >= deadline:
-            code = 124
-        else:
-            time.sleep(min(args.interval, max(0.0, deadline - time.monotonic())))
-            read_new(root)
-            continue
-        break
+    code = wait_code(root, args)
     found, kids = locate(home, args.thread_id)
     print(
         report(

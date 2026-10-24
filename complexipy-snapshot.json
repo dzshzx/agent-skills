@@ -52,48 +52,6 @@
     ]
   },
   {
-    "path": "skills/cross-agent-delegation/evals/fake_codex_daemon.py",
-    "file_name": "fake_codex_daemon.py",
-    "functions": [
-      {
-        "name": "main",
-        "complexity": 24
-      }
-    ]
-  },
-  {
-    "path": "skills/cross-agent-delegation/scripts/codex_thread_progress.py",
-    "file_name": "codex_thread_progress.py",
-    "functions": [
-      {
-        "name": "add_replies",
-        "complexity": 21
-      },
-      {
-        "name": "locate",
-        "complexity": 19
-      },
-      {
-        "name": "main",
-        "complexity": 24
-      }
-    ]
-  },
-  {
-    "path": "skills/cross-agent-delegation/scripts/codex_thread_turn.py",
-    "file_name": "codex_thread_turn.py",
-    "functions": [
-      {
-        "name": "run",
-        "complexity": 17
-      },
-      {
-        "name": "wait_for_turn",
-        "complexity": 23
-      }
-    ]
-  },
-  {
     "path": "skills/sync-agents-instructions/evals/call_evidence.py",
     "file_name": "call_evidence.py",
     "functions": [
