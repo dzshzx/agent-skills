@@ -48,63 +48,83 @@ def parent_thread_id(meta):
     return meta.get("parent_thread_id") or thread_spawn(meta).get("parent_thread_id")
 
 
-def load_threads(directories, thread=None):
-    threads = {}
+def read_meta(path):
+    """Return the first-line session metadata of a rollout, or None to skip it."""
+    with path.open() as stream:
+        head = stream.readline()
+    if not head.endswith("\n"):
+        # Empty, or its writer has not finished the first line yet; the
+        # snapshot reader below would drop that line, so skip the file.
+        reason = "empty file" if not head else "no complete line"
+        print(f"usage report: skipped {path}: {reason}", file=sys.stderr)
+        return None
+    first = json.loads(head)
+    return first.get("payload", {}) if first.get("type") == "session_meta" else {}
+
+
+def index_rollouts(directories):
     indexed = []
     for directory in directories:
         for path in sorted(Path(directory).rglob("rollout-*.jsonl")):
-            with path.open() as stream:
-                head = stream.readline()
-            if not head.endswith("\n"):
-                # Empty, or its writer has not finished the first line yet; the
-                # snapshot reader below would drop that line, so skip the file.
-                reason = "empty file" if not head else "no complete line"
-                print(f"usage report: skipped {path}: {reason}", file=sys.stderr)
-                continue
-            first = json.loads(head)
-            meta = (
-                first.get("payload", {}) if first.get("type") == "session_meta" else {}
-            )
-            indexed.append((path, meta))
+            meta = read_meta(path)
+            if meta is not None:
+                indexed.append((path, meta))
+    return indexed
+
+
+def wanted_threads(indexed, thread=None):
+    """Return the requested thread ids closed over their descendant threads."""
     wanted = {thread} if thread else {m.get("id") for _, m in indexed}
     while True:
         children = {m.get("id") for _, m in indexed if parent_thread_id(m) in wanted}
         if children <= wanted:
-            break
+            return wanted
         wanted.update(children)
+
+
+def read_snapshot(path):
+    # Read snapshots, ignoring only an incomplete last line of active logs.
+    content = path.read_text()
+    lines = content.split("\n")
+    if content and not content.endswith("\n"):
+        lines = lines[:-1]
+    try:
+        return [json.loads(line) for line in lines if line.strip()]
+    except ValueError as exc:
+        raise ValueError(f"invalid rollout {path}: {exc}") from exc
+
+
+def merge_rows(group, own, tid):
+    """Append rows not yet seen in the thread group; reject conflicting copies."""
+    for row in own:
+        canonical = json.dumps(row, sort_keys=True)
+        key = ("ordinal", row["ordinal"]) if "ordinal" in row else ("row", canonical)
+        if key in group["seen"] and group["seen"][key] != canonical:
+            raise ValueError(f"conflicting event in {tid}: {key}")
+        if key not in group["seen"]:
+            group["seen"][key] = canonical
+            group["rows"].append(row)
+
+
+def add_rollout(threads, path):
+    meta, own = own_rows(read_snapshot(path))
+    tid = meta.get("id")
+    if not tid:
+        raise ValueError(f"missing thread id: {path}")
+    group = threads.setdefault(tid, {"meta": meta, "rows": [], "files": [], "seen": {}})
+    if group["meta"] != meta:
+        raise ValueError(f"conflicting metadata for {tid}")
+    group["files"].append(str(path))
+    merge_rows(group, own, tid)
+
+
+def load_threads(directories, thread=None):
+    threads = {}
+    indexed = index_rollouts(directories)
+    wanted = wanted_threads(indexed, thread)
     for path, indexed_meta in indexed:
         if indexed_meta.get("id") in wanted:
-            # Read snapshots, ignoring only an incomplete last line of active logs.
-            content = path.read_text()
-            lines = content.split("\n")
-            if content and not content.endswith("\n"):
-                lines = lines[:-1]
-            try:
-                rows = [json.loads(line) for line in lines if line.strip()]
-            except ValueError as exc:
-                raise ValueError(f"invalid rollout {path}: {exc}") from exc
-            meta, own = own_rows(rows)
-            tid = meta.get("id")
-            if not tid:
-                raise ValueError(f"missing thread id: {path}")
-            group = threads.setdefault(
-                tid, {"meta": meta, "rows": [], "files": [], "seen": {}}
-            )
-            if group["meta"] != meta:
-                raise ValueError(f"conflicting metadata for {tid}")
-            group["files"].append(str(path))
-            for row in own:
-                canonical = json.dumps(row, sort_keys=True)
-                key = (
-                    ("ordinal", row["ordinal"])
-                    if "ordinal" in row
-                    else ("row", canonical)
-                )
-                if key in group["seen"] and group["seen"][key] != canonical:
-                    raise ValueError(f"conflicting event in {tid}: {key}")
-                if key not in group["seen"]:
-                    group["seen"][key] = canonical
-                    group["rows"].append(row)
+            add_rollout(threads, path)
     for group in threads.values():
         group["rows"].sort(key=lambda r: (r.get("timestamp", ""), r.get("ordinal", -1)))
     return threads

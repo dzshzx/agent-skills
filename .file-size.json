@@ -18,7 +18,6 @@
     "skills/codex-subagent-routing/evals/check_logs.py::event_summary": "存量，待整改",
     "skills/codex-subagent-routing/evals/check_logs.py::read_options": "存量，待整改",
     "skills/codex-subagent-routing/evals/live_check.py::main": "存量，待整改",
-    "skills/codex-subagent-routing/scripts/usage_report.py::load_threads": "存量，待整改",
     "skills/codex-subagent-routing/scripts/usage_report.py::main": "存量，待整改",
     "skills/codex-subagent-routing/scripts/usage_report.py::report": "存量，待整改",
     "skills/cross-agent-delegation/evals/fake_codex_daemon.py::main": "存量，待整改",
