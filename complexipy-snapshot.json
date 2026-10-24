@@ -1,12 +1,1 @@
-[
-  {
-    "path": "scripts/tests/test_ci_evidence.py",
-    "file_name": "test_ci_evidence.py",
-    "functions": [
-      {
-        "name": "ReuseEvidenceTest::test_only_trusted_complete_exact_sha_runs_are_reused",
-        "complexity": 25
-      }
-    ]
-  }
-]
+[]
