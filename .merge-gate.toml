@@ -1,0 +1,4 @@
+# 合入前门禁：wt merge 时由用户级 Worktrunk pre-merge 经 merge-gate 从目标分支读取本文件运行，
+# 或复用 6 小时内同一棵树的回执；手动跑门禁也用 merge-gate（fleet-state ADR 0073，dotfiles#235）。
+# --no-live：live-check 真实调用、计费，不进合入门禁。
+command = "bash scripts/verify.sh --no-live"
