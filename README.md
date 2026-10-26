@@ -36,7 +36,7 @@ every skill ships, plus `evals.json` reference prompts for Codex skills).
 - **Project instruction surfaces are independent per agent.** Each
   `[[agents]]` entry declares its own `project_instruction_file`; a surface
   may not import, defer to, or treat another owner’s surface as authority.
-- Daily changes are validated locally, then synchronized with `land --no-recut`.
+- Daily changes are validated locally, then merged and synchronized with `land -C <task-worktree> --merge`.
   Pull requests and release tags keep the short CI gate. Release validation may
   reuse a fresh complete check of the exact SHA from the trusted PR/tag workflow;
   unknown, failed or stale evidence runs the gate again. Renovate dependency PRs are
@@ -141,10 +141,10 @@ planner for other public repositories: they fetch both files from this
 repository at a full 40-character commit SHA and run them with
 `uv run --script --locked`, instead of keeping a copy.
 
-After local validation, synchronize the exact commit:
+After local validation, merge the task branch from its worktree:
 
 ```bash
-land --no-recut
+land -C <task-worktree> --merge
 ```
 
 For an authorized release, tag that exact master SHA and push the annotated tag:
