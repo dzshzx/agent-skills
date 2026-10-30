@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pydantic==2.14.1"]
+# dependencies = ["pydantic==2.14.2"]
 # ///
 """Validate a sync-agents-instructions machine config against the schema in SKILL.md.
 
