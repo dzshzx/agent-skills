@@ -1,6 +1,6 @@
 ---
 name: cross-agent-delegation
-description: Hand a task to the other vendor's coding agent CLI — Claude Code or Codex — by running it as a headless subprocess, or by continuing an existing session the user names. Use when the user names one of them for a piece of work ("have Codex look at this", "ask Claude", "send this to that Codex thread"), in either direction and for any kind of task. Not for subagents inside your own runtime, not for switching models within one harness, and not for delegation the user did not ask for.
+description: Hand a task to the other vendor's coding agent CLI (Claude Code or Codex) as a headless subprocess, or continue a session the user names. Use only when the user names the other agent for the work, in either direction. Not for subagents in your own runtime, model switching within one harness, or delegation the user did not ask for.
 ---
 
 # Cross-agent delegation
@@ -47,11 +47,10 @@ output directories, and tool permissions before launch, using the authorization 
 force. Diagnose the specific missing permission before changing the invocation; difficulty
 enumerating commands does not authorize broader permissions.
 
-**Write the brief to a file; never interpolate it into the command string.** A brief carries
-newlines, quotes, backticks and `$(...)`, all of which the shell executes or mangles before the
-delegate ever sees them. The brief, any agent file and the captured output share one scratch
-directory outside the delegate's cwd, so the `git status` you read afterwards shows the
-delegate's work and nothing of yours:
+**Write the brief to a file; never interpolate it into the command string** — the shell would
+execute or mangle its newlines, quotes, backticks and `$(...)`. Keep the brief, any agent file and
+the captured output in one scratch directory outside the delegate's cwd, so `git status` there
+shows only the delegate's work:
 
 ```bash
 SCRATCH=$(mktemp -d); BRIEF=$SCRATCH/brief.md; OUT=$SCRATCH/out; ERR=$SCRATCH/err
@@ -61,17 +60,11 @@ EOF
 [ -s "$BRIEF" ] || exit 1
 ```
 
-Every contract's command then takes the prompt as its last argument, `-- "$(cat "$BRIEF")"`: the
-quoting keeps the whole brief one argv entry, so backticks, `$(...)`, quotes and newlines reach
-the delegate byte for byte, and the `--` stops Claude and Codex from reading a brief whose first
-line starts with `-` — a Markdown list item, a `---` front-matter fence — as an option (without
-it they fail at parse time, `unknown option` / `unexpected argument`, before any model call).
-Building the command by
-concatenating prompt text into it is how a delegation silently runs something else. Two limits:
-an empty brief is rejected by Claude but sent by Codex as a real turn (hence the `-s`
-check), and one argv entry is capped at 128 KiB on Linux — a brief that inlines a large diff or
-log fails with `Argument list too long` before the CLI starts; point the delegate at the file
-instead.
+Every contract's command takes the prompt last as `-- "$(cat "$BRIEF")"`: one argv entry that
+arrives byte for byte, and the `--` keeps a first line starting with `-` (a list item, a `---`
+fence) from parsing as an option. The `[ -s ]` check matters because Codex sends an empty brief
+as a real turn. One argv entry is capped at 128 KiB on Linux (`Argument list too long`); point
+the delegate at large diffs or logs as files instead of inlining them.
 
 **Bound every dispatch, first or resumed, and capture a fresh pair of output files**, for
 example `timeout 1800 <command> >"$OUT" 2>"$ERR"`; use the task's agreed timeout when specified.
@@ -120,17 +113,6 @@ full delivery; complex tasks may warrant an earlier check when a key contract is
 Inspect unfinished code deeply only to investigate a specific risk. Independent acceptance
 preparation may run alongside execution with clear ownership; avoid implementing the same
 feature or running the same checks twice.
-
-These are optional, trimmable handoff notes, not a schema or a requirement for a status file:
-
-| Information   | Example contents                                                                                                           |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Status        | Running, blocked, awaiting acceptance, or accepted complete; note process failure or interruption and its cause separately |
-| Checkpoint    | Current commit, input version, or identifiable artifact                                                                    |
-| Progress      | Completed and remaining work                                                                                               |
-| Action needed | Specific blocker or decision for the supervisor                                                                            |
-| Evidence      | Result, check output, and relevant log locations                                                                           |
-| Continuation  | Host task identifier and CLI session ID, when available                                                                    |
 
 Delivery means **awaiting acceptance**; only the supervisor's completed checks establish
 **accepted complete**.
