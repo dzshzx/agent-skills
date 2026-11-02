@@ -3,7 +3,7 @@
 version: 2
 updates:
   - package-ecosystem: 'uv'
-    open-pull-requests-limit: 0 # Updates are proposed by local Renovate; alerts stay enabled.
+    open-pull-requests-limit: 0 # Dependency upgrades run in the weekly agent batch (fleet-state ADR 0053, decision 5); alerts stay enabled.
     directories:
       - '/'
     schedule:
@@ -12,7 +12,7 @@ updates:
       uv-minor-patch:
         update-types: ['minor', 'patch']
   - package-ecosystem: 'github-actions'
-    open-pull-requests-limit: 0 # Updates are proposed by local Renovate; alerts stay enabled.
+    open-pull-requests-limit: 0 # Dependency upgrades run in the weekly agent batch (fleet-state ADR 0053, decision 5); alerts stay enabled.
     directories:
       - '/'
       - '/.github/actions/*'
