@@ -2,6 +2,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = ["pydantic==2.14.2"]
+#
+# [tool.uv]
+# exclude-newer = "3 days"
 # ///
 """Validate a sync-agents-instructions machine config against the schema in SKILL.md.
 

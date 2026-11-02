@@ -2,6 +2,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = ["semver==3.1.0"]
+#
+# [tool.uv]
+# exclude-newer = "3 days"
 # ///
 """Print and verify a release version plan (baseline -> target) from remote tags."""
 

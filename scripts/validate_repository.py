@@ -2,6 +2,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = ["python-frontmatter==1.3.0"]
+#
+# [tool.uv]
+# exclude-newer = "3 days"
 # ///
 """Validate the repository invariants required before publishing a skill tag.
 

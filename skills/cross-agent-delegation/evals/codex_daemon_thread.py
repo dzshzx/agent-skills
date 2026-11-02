@@ -2,6 +2,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = ["websockets>=17.3"]
+#
+# [tool.uv]
+# exclude-newer = "3 days"
 # ///
 """live-check fixture: a throwaway thread held by the local Codex app-server daemon.
 

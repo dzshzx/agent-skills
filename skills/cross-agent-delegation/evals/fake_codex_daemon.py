@@ -2,6 +2,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = ["websockets>=17.3"]
+#
+# [tool.uv]
+# exclude-newer = "3 days"
 # ///
 """Offline stand-in for the Codex app-server daemon, for test_codex_thread_turn.py.
 

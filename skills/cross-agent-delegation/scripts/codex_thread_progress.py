@@ -2,6 +2,9 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = []
+#
+# [tool.uv]
+# exclude-newer = "3 days"
 # ///
 """Read-only progress report for a Codex thread and the subagents it spawned, from its rollouts.
 
