@@ -1,5 +1,7 @@
 # agent-skills
 
+> **Archived (November 2026).** This repository is no longer maintained: the skills here served a two-agent (Claude Code + Codex) workflow that has been retired. The code stays available read-only for reference.
+
 Reusable agent skills, installable across AI coding agents (Claude Code,
 Codex, Cursor, ...) via the [skills CLI](https://skills.sh):
 
